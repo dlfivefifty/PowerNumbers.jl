@@ -8,7 +8,7 @@ import Base: exp, atanh, log1p, abs, log, inv, real, imag, conj, sqrt,
                 sin, cos, tan, sec, csc, cot, sind, cosd, tand, secd, cscd, cotd, asin, acos,
                 atan, asec, acsc, acot, asind, acosd, atand, asecd, acscd, acotd, sinh, cosh,
                 tanh, sech, csch, coth, asinh, acosh, asech, acsch, acoth, deg2rad, rad2deg,
-                zero, isless, sign
+                zero, one, isless, iszero, sign, isinf, isreal
 
 import DualNumbers: Dual, realpart, epsilon, dual
 
@@ -100,6 +100,30 @@ end
 
 *(x::PowerNumber, y::Number) = PowerNumber(y*apart(x),y*bpart(x),alpha(x),beta(x))
 *(y::Number, x::PowerNumber) = *(x::PowerNumber, y::Number)
+
+function *(a::PowerNumber, l::LogNumber)
+    @assert a.α == 0 && a.β == 1
+    a.A * l
+end
+
+function *(l::LogNumber, a::PowerNumber)
+    @assert a.α == 0 && a.β == 1
+    l * a.A
+end
+
+LogNumber(a::PowerNumber{T}) where T = LogNumber{T}(a)
+
+function LogNumber{T}(a::PowerNumber) where T
+    @show a
+    if a.α == 0 && a.β > 0
+        LogNumber{T}(zero(T), a.A)
+    elseif a.α == 0 && a.β == 0
+        LogNumber{T}(zero(T), a.A + a.B)
+    else
+        error("not implemented")
+    end
+end
+
 
 -(x::PowerNumber) = PowerNumber(-apart(x),-bpart(x),alpha(x),beta(x))
 -(x::PowerNumber, y::PowerNumber) = +(x, -y)
