@@ -33,5 +33,5 @@ From the package repository root:
 using Pkg
 Pkg.activate(".")
 Pkg.instantiate()
-Pkg.test("PowerNumbers"; coverage=true)
+Pkg.test(; coverage=true)
 ```
