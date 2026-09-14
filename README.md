@@ -29,5 +29,6 @@ log1p(-y)
 
 ```julia
 using Pkg
-Pkg.test("PowerNumbers"; coverage=true)
+Pkg.activate(".")
+Pkg.test(; coverage=true)
 ```
