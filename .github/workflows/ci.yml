@@ -26,7 +26,6 @@ jobs:
         with:
           directories: src
       - uses: codecov/codecov-action@v5
-        if: ${{ secrets.CODECOV_TOKEN != '' }}
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
