@@ -78,7 +78,7 @@ end
         err isa MethodError ? false : rethrow(err)
     end
     if can_float
-        @test _₂F₁(a,b,c,z) isa Number
+        @test _₂F₁(a,b,c,z) ≈ _₂F₁(a,b,c,Base.float(z))
     else
         @test_throws MethodError _₂F₁(a,b,c,z)
     end
