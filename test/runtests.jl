@@ -74,7 +74,7 @@ end
     @test_throws MethodError _₂F₁(a,b,c,z)
 
     a,b,c = 1.1,1.2,1.3
-    @test_broken _₂F₁(a,b,c,z)
+    @test_throws MethodError _₂F₁(a,b,c,z)
     log1p(-z)
 end
 
