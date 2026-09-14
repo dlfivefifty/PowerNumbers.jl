@@ -22,7 +22,7 @@ x = 2 + 3*eps^0.5
 y = 1 - eps
 
 x * y
-log1p(-y)
+x + y
 ```
 
 ## Running tests
