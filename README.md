@@ -31,7 +31,7 @@ From the package repository root:
 
 ```julia
 using Pkg
-Pkg.activate(".")
-Pkg.instantiate()
-Pkg.test(; coverage=true)
+Pkg.activate(; temp=true)
+Pkg.develop(path=".")
+Pkg.test("PowerNumbers"; coverage=true)
 ```
