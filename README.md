@@ -30,5 +30,6 @@ log1p(-y)
 ```julia
 using Pkg
 Pkg.activate(".")
+Pkg.instantiate()
 Pkg.test(; coverage=true)
 ```
