@@ -1,7 +1,7 @@
 # PowerNumbers.jl
 
-[![CI](https://github.com/dlfivefifty/PowerNumbers.jl/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/dlfivefifty/PowerNumbers.jl/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/dlfivefifty/PowerNumbers.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/dlfivefifty/PowerNumbers.jl)
+[![CI](https://github.com/dlfivefifty/PowerNumbers.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/dlfivefifty/PowerNumbers.jl/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/dlfivefifty/PowerNumbers.jl/graph/badge.svg)](https://codecov.io/gh/dlfivefifty/PowerNumbers.jl)
 
 `PowerNumbers.jl` provides number-like types for asymptotic expressions involving powers of `ϵ` (and logarithmic terms) as `ϵ → 0`.
 
