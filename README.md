@@ -27,6 +27,8 @@ log1p(-y)
 
 ## Running tests
 
+From the package repository root:
+
 ```julia
 using Pkg
 Pkg.activate(".")
