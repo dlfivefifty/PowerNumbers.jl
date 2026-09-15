@@ -8,7 +8,7 @@ import Base: exp, atanh, log1p, abs, log, inv, real, imag, conj, sqrt,
                 sin, cos, tan, sec, csc, cot, sind, cosd, tand, secd, cscd, cotd, asin, acos,
                 atan, asec, acsc, acot, asind, acosd, atand, asecd, acscd, acotd, sinh, cosh,
                 tanh, sech, csch, coth, asinh, acosh, asech, acsch, acoth, deg2rad, rad2deg,
-                zero, isless, sign
+                zero, one, isless, iszero, sign, signbit, isinf, isreal, Real, muladd, eps, float
 
 import DualNumbers: Dual, realpart, epsilon, dual
 
@@ -49,7 +49,9 @@ PowerNumber{T,V}(z::PowerNumber) where {T,V} = PowerNumber{T,V}(convert(T, z.A),
 PowerNumber{T,V}(a) where {T,V} = PowerNumber(convert(T,a),zero(T),zero(V),convert(V,Inf))
 
 promote_rule(::Type{T}, ::Type{PowerNumber{V,W}}) where {T,V,W} =
-    promote_type(PowerNumber{promote_type(T,V),W})
+    PowerNumber{promote_type(T,V),W}
+promote_rule(::Type{PowerNumber{T,S}}, ::Type{PowerNumber{V,W}}) where {T,S,V,W} =
+    PowerNumber{promote_type(T,V),promote_type(W,S)}
 
 const ϵ = PowerNumber(1,1)
 
@@ -63,6 +65,11 @@ Dual(x::PowerNumber) = (alpha(x) == 0 && beta(x) == 1) ? (return Dual(apart(x), 
 dual(x::PowerNumber) = Dual(x)
 
 zero(x::PowerNumber) = PowerNumber(zero(x.A), zero(x.B), x.α, x.β)
+zero(::Type{PowerNumber{T,V}}) where {T,V} = PowerNumber(zero(T))
+one(::Type{PowerNumber{T,V}}) where {T,V} = PowerNumber(one(T))
+
+eps(::Type{<:PowerNumber{T}}) where T = eps(T)
+float(P::PowerNumber) = PowerNumber(float(P.A), float(P.B), P.α, P.β)
 
 function (x::PowerNumber)(ε)
     a,b,α,β = apart(x),bpart(x),alpha(x),beta(x)
@@ -89,8 +96,23 @@ function +(x::PowerNumber, y::PowerNumber)
     end
 end
 
-+(x::PowerNumber, y::Number) = x + PowerNumber(y,0,0,Inf)
-+(y::Number, x::PowerNumber) = +(x::PowerNumber, y::Number)
+
+function +(x::PowerNumber, y::Number)
+    a,b,α,β = apart(x),bpart(x),alpha(x),beta(x)
+    if iszero(α)
+        PowerNumber(a+y, b, α, β)
+    elseif iszero(β)
+        PowerNumber(a, b+y, α, β)
+    elseif α > 0
+        PowerNumber(y, a, 0, α)
+    elseif β > 0
+        PowerNumber(a, y, α, 0)
+    else # both parts blow up so constants disapper
+        x
+    end
+end
+
++(y::Number, x::PowerNumber) = +(x, y)
 
 function *(x::PowerNumber, y::PowerNumber)
     a,b,α,β = apart(x),bpart(x),alpha(x),beta(x)
@@ -100,6 +122,31 @@ end
 
 *(x::PowerNumber, y::Number) = PowerNumber(y*apart(x),y*bpart(x),alpha(x),beta(x))
 *(y::Number, x::PowerNumber) = *(x::PowerNumber, y::Number)
+
+muladd(x::Number, y::PowerNumber, z::Number) = x*y + z
+
+function *(a::PowerNumber, l::LogNumber)
+    @assert a.α == 0 && a.β == 1
+    a.A * l
+end
+
+function *(l::LogNumber, a::PowerNumber)
+    @assert a.α == 0 && a.β == 1
+    l * a.A
+end
+
+LogNumber(a::PowerNumber{T}) where T = LogNumber{T}(a)
+
+function LogNumber{T}(a::PowerNumber) where T
+    if a.α == 0 && a.β > 0
+        LogNumber{T}(zero(T), a.A)
+    elseif a.α == 0 && a.β == 0
+        LogNumber{T}(zero(T), a.A + a.B)
+    else
+        error("not implemented")
+    end
+end
+
 
 -(x::PowerNumber) = PowerNumber(-apart(x),-bpart(x),alpha(x),beta(x))
 -(x::PowerNumber, y::PowerNumber) = +(x, -y)
@@ -135,6 +182,13 @@ cbrt(z::PowerNumber) = z^(1/3)
 
 isapprox(a::PowerNumber, b::PowerNumber; opts...) = ≈(apart(a), apart(b); opts...) && ≈(bpart(a), bpart(b); opts...) &&
                                                 ≈(alpha(a), alpha(b); opts...) && ≈(beta(a), beta(b); opts...)
+
+function isapprox(a::PowerNumber, b::Number; opts...)
+    a.α > 0 && return false
+    iszero(a.α) && return isapprox(a.A, b; opts...)
+    isapprox(zero(a.A), b; opts...)
+end
+isapprox(b::Number, a::PowerNumber; opts...) = isapprox(a, b; opts...)
 
 function log(z::PowerNumber{T,V}) where {T,V}
     a,b,α,β = apart(z),bpart(z),alpha(z),beta(z)
