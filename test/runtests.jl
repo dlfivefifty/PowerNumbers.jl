@@ -71,10 +71,10 @@ end
     a,b,c = 1.154,1.2543,1.3543345
     ε = PowerNumber(1.0,1.0)
     z = 1-ε
-    _₂F₁(a,b,c,z)
+    @test_throws MethodError _₂F₁(a,b,c,z)
 
     a,b,c = 1.1,1.2,1.3
-    @test_broken _₂F₁(a,b,c,z)
+    @test_throws MethodError _₂F₁(a,b,c,z)
     log1p(-z)
 end
 
