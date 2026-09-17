@@ -89,6 +89,61 @@ end
     @test PowerNumber(1, 2, -2, 1) == PowerNumber(1.0, 3, -2, 2)
 end
 
+@testset "LogNumber arithmetic" begin
+    @test LogNumber{Float64}(3.0) == LogNumber(0.0, 3.0)
+    @test LogNumber(0.0, 3.0) == 3.0
+    @test 3 + LogNumber(1.0, 2.0) == LogNumber(1.0, 5.0)
+    @test 3 - LogNumber(1.0, 2.0) == LogNumber(-1.0, 1.0)
+    @test -LogNumber(1.0, 2.0) == LogNumber(-1.0, -2.0)
+    @test LogNumber(1.0, 2.0)*2.0 == LogNumber(2.0, 4.0)
+    @test 2.0*LogNumber(1.0, 2.0) == LogNumber(2.0, 4.0)
+end
+
+@testset "PowerNumber constructors and conversions" begin
+    @test PowerNumber{Float64,Float64}(PowerNumber(1,2,0,1)) == PowerNumber(1.0,2.0,0.0,1.0)
+    @test zero(PowerNumber(3.0,4.0,0.0,1.0)) == PowerNumber(0.0,0.0,0.0,1.0)
+    @test zero(PowerNumber{Float64,Float64}) == PowerNumber(0.0)
+    @test one(PowerNumber{Float64,Float64}) == PowerNumber(1.0)
+    @test eps(PowerNumber{Float64,Float64}) == eps(Float64)
+end
+
+@testset "PowerNumber addition merging" begin
+    # y's leading order strictly between x's leading and subleading orders
+    x = PowerNumber(1.0,2.0,0.0,2.0)
+    y = PowerNumber(3.0,4.0,1.0,3.0)
+    @test x + y == PowerNumber(1.0,3.0,0.0,1.0)
+
+    # y's leading order below x's leading order, with y's subleading order truncated away
+    x2 = PowerNumber(5.0,6.0,2.0,4.0)
+    y2 = PowerNumber(3.0,4.0,0.0,5.0)
+    @test x2 + y2 == PowerNumber(3.0,5.0,0.0,2.0)
+
+    # adding a number where α < 0 < β
+    @test PowerNumber(2.0,3.0,-1.0,1.0) + 5 == PowerNumber(2.0,5.0,-1.0,0.0)
+end
+
+@testset "PowerNumber * LogNumber" begin
+    @test PowerNumber(2.0,3.0,0.0,1.0) * LogNumber(1.0,2.0) == LogNumber(1.0,2.0) * 2.0
+    @test LogNumber(1.0,2.0) * PowerNumber(2.0,3.0,0.0,1.0) == LogNumber(1.0,2.0) * 2.0
+end
+
+@testset "PowerNumber misc functions" begin
+    @test_throws ErrorException inv(PowerNumber(1.0,2.0,Inf,Inf))
+    @test sin(PowerNumber(0.3,0.5,0.0,1.0)) ≈ PowerNumber(sin(0.3), 0.5*cos(0.3), 0.0, 1.0)
+    @test_throws ErrorException sin(PowerNumber(1.0,2.0,-1.0,0.0))
+
+    @test sign(PowerNumber(-3.0,1.0,0.0,1.0)) == -1.0
+    @test abs(PowerNumber(-3.0,2.0,0.0,1.0)) == PowerNumber(3.0,-2.0,0.0,1.0)
+
+    @test isless(PowerNumber(0.0,1.0,1.0,2.0), 5.0)
+    @test !isless(PowerNumber(2.0,1.0,-1.0,0.0), 5.0)
+    @test isless(PowerNumber(3.0,1.0,0.0,1.0), 5.0)
+
+    @test sprint(show, PowerNumber(2.0,0.0,1.0,1.0)) == "(2.0)ϵ^1.0 + o(ϵ^1.0)"
+    @test sprint(show, PowerNumber(2.0,3.0,0.0,1.0)) == "2.0 + (3.0)ϵ^1.0 + o(ϵ^1.0)"
+    @test sprint(show, PowerNumber(2.0,3.0,1.0,2.0)) == "(2.0)ϵ^1.0 + (3.0)ϵ^2.0 + o(ϵ^2.0)"
+end
+
 
 
 #0.19999999999999996, 0.10000000000000009, 1.3, 1.0 + (-1.0)ϵ^1.0 + o(ϵ^1.0)
