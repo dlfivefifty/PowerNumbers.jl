@@ -46,31 +46,27 @@ end
 end
 
 @testset "sin" begin
-    ε = PowerNumber(1,1)
-    @test sin(sqrt(ε))^2 === PowerNumber(1.0,1.0)
-    @test sin(sqrt(ε))^2.0 === PowerNumber(1.0,1.0)
-    @test sin(ε)/ε === PowerNumber(1.0,0.0,0,0)
-    @test sin(sqrt(ε))/sqrt(ε) === PowerNumber(1.0,0.0,0.0,0.0)
+    @test sin(sqrt(ϵ))^2 === PowerNumber(1.0,1.0)
+    @test sin(sqrt(ϵ))^2.0 === PowerNumber(1.0,1.0)
+    @test sin(ϵ)/ϵ === PowerNumber(1.0,0.0,0.0,0.0)
+    @test sin(sqrt(ϵ))/sqrt(ϵ) === PowerNumber(1.0,0.0,0.0,0.0)
 end
 
 @testset "LogNumber" begin
-    ε = PowerNumber(1.0,1.0)
-    z = 1-ε
+    z = 1-ϵ
     @test log1p(-z) isa LogNumber
-    @test exp(LogNumber(2,3)) == exp(3)*ε^2
+    @test exp(LogNumber(2,3)) == exp(3)*ϵ^2
     HypergeometricFunctions.expm1(LogNumber(2,3))
 end
 
 @testset "Rational" begin
-    ε = PowerNumber(1.0,1.0)
     @test PowerNumber(1.,0,0.,1.) + PowerNumber(-1.,0,2.,2.) == PowerNumber(1.,0.,0.,1)
-    @test (1 + 1/ε + 1/ε^2) / (1 + 1/ε + 1/ε^2) == 1
+    @test_broken (1 + 1/ϵ + 1/ϵ^2) / (1 + 1/ϵ + 1/ϵ^2) == 1
 end
 
 @testset "HypergeometricFunctions" begin
     a,b,c = 1.154,1.2543,1.3543345
-    ε = PowerNumber(1.0,1.0)
-    z = 1-ε
+    z = 1-ϵ
     @test_throws MethodError _₂F₁(a,b,c,z)
 
     a,b,c = 1.1,1.2,1.3

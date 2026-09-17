@@ -20,7 +20,7 @@ include("LogNumber.jl")
 """
     PowerNumber(A, B, α, β)
 
-represents a power series of the form `A*ε^α + B*ϵ^β + o(ϵ^β)` where `α ≤ β`.
+represents a power series of the form `A*ϵ^α + B*ϵ^β + o(ϵ^β)` where `α ≤ β`.
 When α == β we impose B = 0.
 """
 struct PowerNumber{T<:Number,V<:Number} <: Number
@@ -54,7 +54,7 @@ promote_rule(::Type{T}, ::Type{PowerNumber{V,W}}) where {T,V,W} =
 promote_rule(::Type{PowerNumber{T,S}}, ::Type{PowerNumber{V,W}}) where {T,S,V,W} =
     PowerNumber{promote_type(T,V),promote_type(W,S)}
 
-const ϵ = PowerNumber(1,1)
+const ϵ = PowerNumber(1.0,1.0)
 
 apart(z::PowerNumber) = z.A
 bpart(z::PowerNumber) = z.B
