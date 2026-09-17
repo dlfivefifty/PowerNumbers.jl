@@ -21,6 +21,7 @@ include("LogNumber.jl")
     PowerNumber(A, B, α, β)
 
 represents a power series of the form `A*ε^α + B*ϵ^β + o(ϵ^β)` where `α ≤ β`.
+When α == β we impose B = 0.
 """
 struct PowerNumber{T<:Number,V<:Number} <: Number
     A::T
@@ -174,8 +175,7 @@ end
 sqrt(z::PowerNumber) = z^0.5
 cbrt(z::PowerNumber) = z^(1/3)
 
-==(a::PowerNumber, b::PowerNumber) = apart(a) == apart(b) && bpart(a) == bpart(b) &&
-                                    alpha(a) == alpha(b) && beta(a) == beta(b)
+==(a::PowerNumber, b::PowerNumber) = (a.α > 0 && b.α > 0) || (a.α == b.α && a.A == b.A)
 
 ==(a::Number, b::PowerNumber) = PowerNumber(a) == b
 ==(a::PowerNumber, b::Number) = a == PowerNumber(b)

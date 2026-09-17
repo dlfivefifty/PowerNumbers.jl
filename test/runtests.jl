@@ -64,7 +64,7 @@ end
 @testset "Rational" begin
     ε = PowerNumber(1.0,1.0)
     @test PowerNumber(1.,0,0.,1.) + PowerNumber(-1.,0,2.,2.) == PowerNumber(1.,0.,0.,1)
-    @test_broken (1 + 1/ε + 1/ε^2) / (1 + 1/ε + 1/ε^2) == 1
+    @test (1 + 1/ε + 1/ε^2) / (1 + 1/ε + 1/ε^2) == 1
 end
 
 @testset "HypergeometricFunctions" begin
@@ -82,6 +82,12 @@ end
     a = @interval(1.0)
     p = PowerNumber(a,a,0,1)
     @test (a^4+a^2-a) == (p^4+p^2-p)(0)
+end
+
+@testset "all 0" begin
+    @test 0 == PowerNumber(0,1, -1, 2) == PowerNumber(1, 2, 3, 4)
+    @test 1 == PowerNumber(1, 2, 0, 1)
+    @test 1 ≠ PowerNumber(1, 2, -1, 0)
 end
 
 
