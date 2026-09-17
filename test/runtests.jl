@@ -46,31 +46,27 @@ end
 end
 
 @testset "sin" begin
-    ε = PowerNumber(1,1)
-    @test sin(sqrt(ε))^2 === PowerNumber(1.0,1.0)
-    @test sin(sqrt(ε))^2.0 === PowerNumber(1.0,1.0)
-    @test sin(ε)/ε === PowerNumber(1.0,0.0,0,0)
-    @test sin(sqrt(ε))/sqrt(ε) === PowerNumber(1.0,0.0,0.0,0.0)
+    @test sin(sqrt(ϵ))^2 === PowerNumber(1.0,1.0)
+    @test sin(sqrt(ϵ))^2.0 === PowerNumber(1.0,1.0)
+    @test sin(ϵ)/ϵ === PowerNumber(1.0,0.0,0.0,0.0)
+    @test sin(sqrt(ϵ))/sqrt(ϵ) === PowerNumber(1.0,0.0,0.0,0.0)
 end
 
 @testset "LogNumber" begin
-    ε = PowerNumber(1.0,1.0)
-    z = 1-ε
+    z = 1-ϵ
     @test log1p(-z) isa LogNumber
-    @test exp(LogNumber(2,3)) == exp(3)*ε^2
+    @test exp(LogNumber(2,3)) == exp(3)*ϵ^2
     HypergeometricFunctions.expm1(LogNumber(2,3))
 end
 
 @testset "Rational" begin
-    ε = PowerNumber(1.0,1.0)
     @test PowerNumber(1.,0,0.,1.) + PowerNumber(-1.,0,2.,2.) == PowerNumber(1.,0.,0.,1)
-    @test_broken (1 + 1/ε + 1/ε^2) / (1 + 1/ε + 1/ε^2) == 1
+    @test_broken (1 + 1/ϵ + 1/ϵ^2) / (1 + 1/ϵ + 1/ϵ^2) == 1
 end
 
 @testset "HypergeometricFunctions" begin
     a,b,c = 1.154,1.2543,1.3543345
-    ε = PowerNumber(1.0,1.0)
-    z = 1-ε
+    z = 1-ϵ
     @test_throws MethodError _₂F₁(a,b,c,z)
 
     a,b,c = 1.1,1.2,1.3
@@ -82,6 +78,70 @@ end
     a = @interval(1.0)
     p = PowerNumber(a,a,0,1)
     @test (a^4+a^2-a) == (p^4+p^2-p)(0)
+end
+
+@testset "all 0" begin
+    @test 0 == PowerNumber(0,1, -1, 2) == PowerNumber(1, 2, 3, 4)
+    @test 1 == PowerNumber(1, 2, 0, 1)
+    @test 1 ≠ PowerNumber(1, 2, -1, 0)
+    @test PowerNumber(1, 2, -2, -1) == PowerNumber(1.0, 2, -2, -1)
+    @test PowerNumber(1, 2, -2, -1) ≠ PowerNumber(1.0, 2, -2, 0)
+    @test PowerNumber(1, 2, -2, 1) == PowerNumber(1.0, 3, -2, 2)
+end
+
+@testset "LogNumber arithmetic" begin
+    @test LogNumber{Float64}(3.0) == LogNumber(0.0, 3.0)
+    @test LogNumber(0.0, 3.0) == 3.0
+    @test 3 + LogNumber(1.0, 2.0) == LogNumber(1.0, 5.0)
+    @test 3 - LogNumber(1.0, 2.0) == LogNumber(-1.0, 1.0)
+    @test -LogNumber(1.0, 2.0) == LogNumber(-1.0, -2.0)
+    @test LogNumber(1.0, 2.0)*2.0 == LogNumber(2.0, 4.0)
+    @test 2.0*LogNumber(1.0, 2.0) == LogNumber(2.0, 4.0)
+end
+
+@testset "PowerNumber constructors and conversions" begin
+    @test PowerNumber{Float64,Float64}(PowerNumber(1,2,0,1)) == PowerNumber(1.0,2.0,0.0,1.0)
+    @test zero(PowerNumber(3.0,4.0,0.0,1.0)) == PowerNumber(0.0,0.0,0.0,1.0)
+    @test zero(PowerNumber{Float64,Float64}) == PowerNumber(0.0)
+    @test one(PowerNumber{Float64,Float64}) == PowerNumber(1.0)
+    @test eps(PowerNumber{Float64,Float64}) == eps(Float64)
+end
+
+@testset "PowerNumber addition merging" begin
+    # y's leading order strictly between x's leading and subleading orders
+    x = PowerNumber(1.0,2.0,0.0,2.0)
+    y = PowerNumber(3.0,4.0,1.0,3.0)
+    @test x + y == PowerNumber(1.0,3.0,0.0,1.0)
+
+    # y's leading order below x's leading order, with y's subleading order truncated away
+    x2 = PowerNumber(5.0,6.0,2.0,4.0)
+    y2 = PowerNumber(3.0,4.0,0.0,5.0)
+    @test x2 + y2 == PowerNumber(3.0,5.0,0.0,2.0)
+
+    # adding a number where α < 0 < β
+    @test PowerNumber(2.0,3.0,-1.0,1.0) + 5 == PowerNumber(2.0,5.0,-1.0,0.0)
+end
+
+@testset "PowerNumber * LogNumber" begin
+    @test PowerNumber(2.0,3.0,0.0,1.0) * LogNumber(1.0,2.0) == LogNumber(1.0,2.0) * 2.0
+    @test LogNumber(1.0,2.0) * PowerNumber(2.0,3.0,0.0,1.0) == LogNumber(1.0,2.0) * 2.0
+end
+
+@testset "PowerNumber misc functions" begin
+    @test_throws ErrorException inv(PowerNumber(1.0,2.0,Inf,Inf))
+    @test sin(PowerNumber(0.3,0.5,0.0,1.0)) ≈ PowerNumber(sin(0.3), 0.5*cos(0.3), 0.0, 1.0)
+    @test_throws ErrorException sin(PowerNumber(1.0,2.0,-1.0,0.0))
+
+    @test sign(PowerNumber(-3.0,1.0,0.0,1.0)) == -1.0
+    @test abs(PowerNumber(-3.0,2.0,0.0,1.0)) == PowerNumber(3.0,-2.0,0.0,1.0)
+
+    @test isless(PowerNumber(0.0,1.0,1.0,2.0), 5.0)
+    @test !isless(PowerNumber(2.0,1.0,-1.0,0.0), 5.0)
+    @test isless(PowerNumber(3.0,1.0,0.0,1.0), 5.0)
+
+    @test sprint(show, PowerNumber(2.0,0.0,1.0,1.0)) == "(2.0)ϵ^1.0 + o(ϵ^1.0)"
+    @test sprint(show, PowerNumber(2.0,3.0,0.0,1.0)) == "2.0 + (3.0)ϵ^1.0 + o(ϵ^1.0)"
+    @test sprint(show, PowerNumber(2.0,3.0,1.0,2.0)) == "(2.0)ϵ^1.0 + (3.0)ϵ^2.0 + o(ϵ^2.0)"
 end
 
 
