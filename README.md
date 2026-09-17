@@ -5,33 +5,27 @@
 
 `PowerNumbers.jl` provides number-like types for asymptotic expressions involving powers of an infinitesimal parameter (and logarithmic terms) as it approaches `0`.
 
-## Installation
-
-```julia
-using Pkg
-Pkg.add("PowerNumbers")
-```
 
 ## Quick start
 
 ```julia
-using PowerNumbers
+julia> using PowerNumbers
 
-eps = PowerNumber(1.0, 1.0)
-x = 2 + 3*eps^0.5
-y = 1 - eps
+julia> ϵ # analoguous to a dual number
+(1)ϵ^1 + o(ϵ^1)
 
-x * y
-x + y
-```
+julia> x = 2 + 3sqrt(ϵ) # but we support fractional powers
+2.0 + (3.0)ϵ^0.5 + o(ϵ^0.5)
 
-## Running tests
+julia> y = 1 - ϵ # simple algebraic relationships work
+1 + (-1)ϵ^1 + o(ϵ^1)
 
-From the package repository root:
+julia> x * y
+2.0 + o(ϵ^0.0)
 
-```julia
-using Pkg
-Pkg.activate(".")
-Pkg.instantiate()
-Pkg.test(; coverage=true)
+julia> x + y
+3.0 + (3.0)ϵ^0.5 + o(ϵ^0.5)
+
+julia> log(ϵ) + 5 # we also support logarithms
+(1.0)log ε + 5.0
 ```
