@@ -88,6 +88,9 @@ end
     @test 0 == PowerNumber(0,1, -1, 2) == PowerNumber(1, 2, 3, 4)
     @test 1 == PowerNumber(1, 2, 0, 1)
     @test 1 ≠ PowerNumber(1, 2, -1, 0)
+    @test PowerNumber(1, 2, -2, -1) == PowerNumber(1.0, 2, -2, -1)
+    @test PowerNumber(1, 2, -2, -1) ≠ PowerNumber(1.0, 2, -2, 0)
+    @test PowerNumber(1, 2, -2, 1) == PowerNumber(1.0, 3, -2, 2)
 end
 
 

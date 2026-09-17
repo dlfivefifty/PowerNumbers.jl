@@ -175,7 +175,7 @@ end
 sqrt(z::PowerNumber) = z^0.5
 cbrt(z::PowerNumber) = z^(1/3)
 
-==(a::PowerNumber, b::PowerNumber) = (a.α > 0 && b.α > 0) || (a.α == b.α && a.A == b.A)
+==(a::PowerNumber, b::PowerNumber) = (a.α > 0 && b.α > 0) || (a.α == b.α && a.A == b.A && ((a.β > 0 && b.β > 0) || (a.β == b.β && a.B == b.B)))
 
 ==(a::Number, b::PowerNumber) = PowerNumber(a) == b
 ==(a::PowerNumber, b::Number) = a == PowerNumber(b)
