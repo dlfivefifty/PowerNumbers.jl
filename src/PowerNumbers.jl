@@ -73,8 +73,8 @@ eps(::Type{<:PowerNumber{T}}) where T = eps(T)
 float(P::PowerNumber) = PowerNumber(float(P.A), float(P.B), P.α, P.β)
 
 function (x::PowerNumber)(ε)
-    a,b,α,β = apart(x),bpart(x),alpha(x),beta(x)
-    a*ε^α + b*ε^β
+    (; A,B,α,β) = x
+    A*ε^α + B*ε^β
 end
 
 function +(x::PowerNumber, y::PowerNumber)
@@ -168,14 +168,16 @@ end
 
 ^(z::PowerNumber, p::Integer) = invoke(^, Tuple{Number,Integer}, z, p)
 function ^(z::PowerNumber, p::Number)
-    a,b,α,β = apart(z),bpart(z),alpha(z),beta(z)
-    α == β ? (return PowerNumber(a^p,α*p)) : (return PowerNumber(a^p,(a^(p-1))*b*p,p*α,β+(p-1)*α))
+    (; A,B,α,β) = z
+    α == β ? (return PowerNumber(A^p,α*p)) : (return PowerNumber(A^p,(A^(p-1))*B*p,p*α,β+(p-1)*α))
 end
 
 sqrt(z::PowerNumber) = z^0.5
 cbrt(z::PowerNumber) = z^(1/3)
 
-==(a::PowerNumber, b::PowerNumber) = (a.α > 0 && b.α > 0) || (a.α == b.α && a.A == b.A && ((a.β > 0 && b.β > 0) || (a.β == b.β && a.B == b.B)))
+iszero(z::PowerNumber) = z.α > 0 || (iszero(z.A) && (z.β > 0 || iszero(z.B)))
+
+==(a::PowerNumber, b::PowerNumber) = iszero(a - b)
 
 ==(a::Number, b::PowerNumber) = PowerNumber(a) == b
 ==(a::PowerNumber, b::Number) = a == PowerNumber(b)

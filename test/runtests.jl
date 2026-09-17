@@ -61,7 +61,7 @@ end
 
 @testset "Rational" begin
     @test PowerNumber(1.,0,0.,1.) + PowerNumber(-1.,0,2.,2.) == PowerNumber(1.,0.,0.,1)
-    @test_broken (1 + 1/ϵ + 1/ϵ^2) / (1 + 1/ϵ + 1/ϵ^2) == 1
+    @test (1 + 1/ϵ + 1/ϵ^2) / (1 + 1/ϵ + 1/ϵ^2) == 1
 end
 
 @testset "HypergeometricFunctions" begin
