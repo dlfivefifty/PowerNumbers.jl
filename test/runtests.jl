@@ -99,6 +99,18 @@ end
     @test 2.0*LogNumber(1.0, 2.0) == LogNumber(2.0, 4.0)
 end
 
+@testset "PowerNumber exponents are floats" begin
+    # β == Inf marks an exact value, so an integer exponent type could not represent it
+    @test PowerNumber(1,1) isa PowerNumber{Int,Float64}
+    @test PowerNumber(1,2,0,1) isa PowerNumber{Int,Float64}
+    @test beta(PowerNumber(1)) == Inf
+
+    # promoting an integer into a power number with integer coefficients used to throw
+    e = PowerNumber(1,1)
+    @test 2 + im + e isa Complex{<:PowerNumber}
+    @test (2 + im + e)(0.5) == 2.5 + im
+end
+
 @testset "PowerNumber constructors and conversions" begin
     @test PowerNumber{Float64,Float64}(PowerNumber(1,2,0,1)) == PowerNumber(1.0,2.0,0.0,1.0)
     @test zero(PowerNumber(3.0,4.0,0.0,1.0)) == PowerNumber(0.0,0.0,0.0,1.0)
@@ -138,8 +150,17 @@ end
 end
 
 @testset "PowerNumber * LogNumber" begin
+    # only the leading coefficient survives: (ϵ^β)*log(ϵ) is o(1)
     @test PowerNumber(2.0,3.0,0.0,1.0) * LogNumber(1.0,2.0) == LogNumber(1.0,2.0) * 2.0
     @test LogNumber(1.0,2.0) * PowerNumber(2.0,3.0,0.0,1.0) == LogNumber(1.0,2.0) * 2.0
+
+    # the complex case must not fall through to LogNumber's generic `::Complex` method,
+    # which would nest a power number inside the LogNumber
+    z = (2.0+3.0im) + (4.0-1.0im)*ϵ
+    @test z isa Complex{<:PowerNumber}
+    @test z * LogNumber(1.0,2.0) === LogNumber(1.0,2.0) * (2.0+3.0im)
+    @test LogNumber(1.0,2.0) * z === LogNumber(1.0,2.0) * (2.0+3.0im)
+    @test z * LogNumber(1.0,2.0) isa LogNumber{ComplexF64}
 end
 
 @testset "PowerNumber misc functions" begin
