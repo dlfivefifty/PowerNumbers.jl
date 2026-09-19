@@ -1,6 +1,6 @@
 module PowerNumbers
 
-using Base, DualNumbers, LinearAlgebra
+using Base, DualNumbers, LinearAlgebra, Infinities
 
 import Base: convert, *, +, -, ==, <, <=, >, !, !=, >=, /, ^, \, in, isapprox, promote_rule
 import Base: exp, atanh, log1p, abs, log, inv, real, imag, conj, sqrt,
@@ -12,8 +12,10 @@ import Base: exp, atanh, log1p, abs, log, inv, real, imag, conj, sqrt,
                 muladd, eps, float, angle
 
 import DualNumbers: Dual, realpart, epsilon, dual
+import Infinities: InfiniteCardinal, ℵ₀
 
-export PowerNumber, LogNumber, ϵ
+# `ℵ₀` is part of the type's vocabulary now, so it is re-exported
+export PowerNumber, LogNumber, ϵ, ℵ₀, InfiniteCardinal
 
 include("LogNumber.jl")
 
@@ -28,34 +30,73 @@ When α == β we impose B = 0.
 Complex expansions are represented as `Complex{<:PowerNumber}`, that is, as a pair of
 real expansions, and the four-argument constructor returns one when given complex
 coefficients.
+
+The two exponents are typed independently, so that a value known exactly can carry
+`β == ℵ₀` (`Infinities.InfiniteCardinal{0}`) without forcing the exponents to be floats:
+converting an integer gives an expansion whose coefficients and orders are all integers.
 """
-struct PowerNumber{T<:Real,V<:Real} <: Real
+struct PowerNumber{T<:Real,V<:Real,W<:Real} <: Real
     A::T
     B::T
     α::V
-    β::V
-    function PowerNumber{T,V}(A,B,α,β) where {T<:Real,V<:Real}
+    β::W
+    function PowerNumber{T,V,W}(A, B, α, β) where {T<:Real,V<:Real,W<:Real}
         α > β && error("Must have α ≤ β")
         α == -Inf && error("Must have α≤ β")
-        if α == β
-            new{T,V}(A+B,0,β,β)
-        elseif A == 0
-            new{T,V}(B,0,β,β)
-        else
-            new{T,V}(A,B,α,β)
-        end
+        new{T,V,W}(A, B, α, β)
     end
 end
 
+## exponent (order) arithmetic
+#
+# `ℵ₀` and `Inf` both mark an order beyond which nothing is known, but they are different
+# types, so the few places that have to move between them go through these helpers.
+
+"""
+    exactorder(W)
+
+the order marking a value that is known exactly, as a `W`: `Inf` for a float exponent and
+`ℵ₀` for an integer one, which `Infinities` compares and adds like any other integer.
+"""
+exactorder(::Type{W}) where W<:AbstractFloat = W(Inf)
+exactorder(::Type{<:Real}) = ℵ₀
+
+# the order type able to hold both a `W` and an exact marker, and both a `W` and a finite
+# order (a type parameter of `ℵ₀` alone cannot represent `0`)
+exactordertype(::Type{W}) where W<:AbstractFloat = W
+exactordertype(::Type{W}) where W<:Real = promote_type(W, InfiniteCardinal{0})
+finiteordertype(::Type{<:InfiniteCardinal}) = Integer
+finiteordertype(::Type{W}) where W<:Real = W
+
+ordertype(::Type{V}, ::Type{W}) where {V<:Real,W<:Real} = promote_type(V, W)
+ordertype(::Type{V}, ::Type{<:InfiniteCardinal}) where V<:AbstractFloat = V
+ordertype(::Type{<:InfiniteCardinal}, ::Type{W}) where W<:AbstractFloat = W
+
+convertorder(::Type{W}, α) where W<:Real = convert(W, α)
+convertorder(::Type{W}, ::InfiniteCardinal) where W<:AbstractFloat = W(Inf)
+
+# `≈` on orders: `ℵ₀ ≈ Inf` has no common type to promote to, so infinite orders (which
+# are exact markers, not measurements) are compared with `==` instead
+const InfiniteOrder = Union{InfiniteCardinal,Infinities.RealInfinity,Infinities.Infinity}
+approxorder(α, β; opts...) = ≈(α, β; opts...)
+approxorder(α::InfiniteOrder, β; opts...) = α == β
+approxorder(α, β::InfiniteOrder; opts...) = α == β
+approxorder(α::InfiniteOrder, β::InfiniteOrder; opts...) = α == β
+
 # `_pn` builds either a `PowerNumber` or, for complex coefficients, the equivalent
 # `Complex{<:PowerNumber}`.  All constructors and operations funnel through it so that
-# complex data never has to be stored inside a `PowerNumber`.
-# Exponents are floated: an exact value carries `β == Inf`, which an integer exponent
-# type could not represent, and fractional powers are the normal case anyway.
+# complex data never has to be stored inside a `PowerNumber`, and so that the canonical
+# form (no `B` when `α == β`, no vanishing leading coefficient) is imposed in one place.
+# The exponents keep their own types and are never promoted against each other.
 function _pn(A::Real, B::Real, α::Real, β::Real)
     a, b = promote(A, B)
-    c, d = promote(float(α), float(β))
-    PowerNumber{typeof(a),typeof(c)}(a, b, c, d)
+    if α == β
+        PowerNumber{typeof(a),typeof(β),typeof(β)}(a+b, zero(a), β, β)
+    elseif iszero(a) && !iszero(b)
+        PowerNumber{typeof(b),typeof(β),typeof(β)}(b, zero(b), β, β)
+    else
+        PowerNumber{typeof(a),typeof(α),typeof(β)}(a, b, α, β)
+    end
 end
 _pn(A::Complex, B::Complex, α::Real, β::Real) =
     complex(_pn(real(A), real(B), α, β), _pn(imag(A), imag(B), α, β))
@@ -63,18 +104,32 @@ _pn(A::Number, B::Number, α::Real, β::Real) = _pn(promote(A,B)..., α, β)
 
 PowerNumber(A::Number, B::Number, α::Real, β::Real) = _pn(A, B, α, β)
 PowerNumber(A::Number, α::Real) = PowerNumber(A, zero(A), α, α)
-PowerNumber(A::Number) = PowerNumber(A, zero(A), 0, Inf)
-PowerNumber(A::Complex) = PowerNumber(A, zero(A), 0, Inf) # disambiguate from Base's Real(::Complex)
+PowerNumber(A::Number) = PowerNumber(A, zero(A), 0, ℵ₀)
+PowerNumber(A::Complex) = PowerNumber(A, zero(A), 0, ℵ₀) # disambiguate from Base's Real(::Complex)
 
-PowerNumber{T,V}(z::PowerNumber) where {T<:Real,V<:Real} =
-    PowerNumber{T,V}(convert(T, z.A), convert(T, z.B), convert(V, z.α), convert(V, z.β))
-PowerNumber{T,V}(a::Real) where {T<:Real,V<:Real} =
-    PowerNumber{T,V}(convert(T,a), zero(T), zero(V), convert(V,Inf))
+PowerNumber{T,V,W}(z::PowerNumber) where {T<:Real,V<:Real,W<:Real} =
+    PowerNumber{T,V,W}(convert(T, z.A), convert(T, z.B), convertorder(V, z.α), convertorder(W, z.β))
+PowerNumber{T,V,W}(a::Real) where {T<:Real,V<:Real,W<:Real} =
+    PowerNumber{T,V,W}(convert(T,a), zero(T), convert(V, 0), exactorder(W))
 
-promote_rule(::Type{PowerNumber{V,W}}, ::Type{T}) where {V,W,T<:Real} =
-    PowerNumber{promote_type(T,V),W}
-promote_rule(::Type{PowerNumber{T,S}}, ::Type{PowerNumber{V,W}}) where {T,S,V,W} =
-    PowerNumber{promote_type(T,V),promote_type(W,S)}
+# `PowerNumber{T,V}` is taken to mean both exponents of type `V`
+PowerNumber{T,V}(A, B, α, β) where {T<:Real,V<:Real} = PowerNumber{T,V,V}(A, B, α, β)
+PowerNumber{T,V}(z::PowerNumber) where {T<:Real,V<:Real} = PowerNumber{T,V,V}(z)
+PowerNumber{T,V}(a::Real) where {T<:Real,V<:Real} = PowerNumber{T,V,V}(a)
+
+# `Infinities` claims `(::Type{T})(::Infinity) where T<:Real`, so spell out that an
+# infinite argument is just a coefficient like any other
+for Inf∞ in (:(Infinities.Infinity), :(Infinities.RealInfinity))
+    @eval begin
+        PowerNumber{T,V,W}(a::$Inf∞) where {T<:Real,V<:Real,W<:Real} = PowerNumber{T,V,W}(convert(T, a))
+        PowerNumber{T,V}(a::$Inf∞) where {T<:Real,V<:Real} = PowerNumber{T,V,V}(convert(T, a))
+    end
+end
+
+promote_rule(::Type{PowerNumber{T,V,W}}, ::Type{S}) where {T,V,W,S<:Real} =
+    PowerNumber{promote_type(S,T),finiteordertype(V),exactordertype(W)}
+promote_rule(::Type{PowerNumber{T1,V1,W1}}, ::Type{PowerNumber{T2,V2,W2}}) where {T1,V1,W1,T2,V2,W2} =
+    PowerNumber{promote_type(T1,T2),ordertype(V1,V2),ordertype(W1,W2)}
 
 const ϵ = PowerNumber(1.0,1.0)
 
@@ -131,12 +186,16 @@ Dual(x::PowerNumber) = (x.α == 0 && x.β == 1) ? (return Dual(x.A, x.B)) : (thr
 dual(x::PowerNumber) = Dual(x)
 
 zero(x::PowerNumber) = PowerNumber(zero(x.A), zero(x.B), x.α, x.β)
-zero(::Type{PowerNumber{T,V}}) where {T,V} = PowerNumber(zero(T))
-one(::Type{PowerNumber{T,V}}) where {T,V} = PowerNumber(one(T))
+# `zero`/`one` have to preserve the type, including the order types: handing back a
+# `ℵ₀`-ordered value from a float-ordered type drags the whole computation over with it
+zero(::Type{PowerNumber{T,V,W}}) where {T,V,W} = PowerNumber{T,V,W}(zero(T))
+one(::Type{PowerNumber{T,V,W}}) where {T,V,W} = PowerNumber{T,V,W}(one(T))
+zero(::Type{PowerNumber{T,V}}) where {T,V} = PowerNumber{T,V,V}(zero(T))
+one(::Type{PowerNumber{T,V}}) where {T,V} = PowerNumber{T,V,V}(one(T))
 
 eps(::Type{<:PowerNumber{T}}) where T = eps(T)
 float(P::PowerNumber) = PowerNumber(float(P.A), float(P.B), P.α, P.β)
-float(::Type{PowerNumber{T,V}}) where {T,V} = PowerNumber{float(T),float(V)}
+float(::Type{PowerNumber{T,V,W}}) where {T,V,W} = PowerNumber{float(T),V,W}
 
 function (x::PowerNumber)(ε)
     (; A,B,α,β) = x
@@ -146,17 +205,17 @@ end
 function +(x::PowerNumber, y::PowerNumber)
     a,b,α,β = x.A,x.B,x.α,x.β
     c,d,γ,δ = y.A,y.B,y.α,y.β
-    if δ ≈ β && d != 0
+    if approxorder(δ, β) && d != 0
         return +(PowerNumber(a,b+d,α,β), PowerNumber(c,0,γ,δ))
     elseif δ < β #we assume β < δ
         return +(y, x)
     elseif γ > β || c == 0
         return x
-    elseif γ ≈ β
+    elseif approxorder(γ, β)
         return PowerNumber(a,b+c,α,β)
     elseif γ < β && γ > α
         return PowerNumber(a,c,α,γ)
-    elseif γ ≈ α
+    elseif approxorder(γ, α)
         return PowerNumber(a+c,b,α,β)
     else
         return PowerNumber(c,a,γ,α)
@@ -240,8 +299,11 @@ inv(x::PowerNumber) = _pn(_inv(terms(x)...)...)
 /(z::PowerNumber, x::Real) = z*inv(x)
 /(x::Real, z::PowerNumber) = x*inv(z)
 
+# for α == 0 the error order is untouched, which is worth spelling out so that an exact
+# value keeps its `ℵ₀` rather than picking up a `-0.0` and turning into a plain `∞`
 _pow(A, B, α, β, p) =
-    α == β ? (A^p, zero(A), α*p, α*p) : (A^p, (A^(p-1))*B*p, p*α, β+(p-1)*α)
+    α == β ? (A^p, zero(A), α*p, α*p) :
+             (A^p, (A^(p-1))*B*p, p*α, iszero(α) ? β : β+(p-1)*α)
 
 ^(z::PowerNumber, p::Integer) = invoke(^, Tuple{Number,Integer}, z, p)
 ^(z::PowerNumber, p::Number) = _pn(_pow(terms(z)..., p)...)
@@ -262,7 +324,7 @@ isfinite(z::PowerNumber) = !isinf(z) && !isnan(z)
 ==(a::PowerNumber, b::AbstractIrrational) = a == PowerNumber(b)
 
 isapprox(a::PowerNumber, b::PowerNumber; opts...) = ≈(a.A, b.A; opts...) && ≈(a.B, b.B; opts...) &&
-                                                ≈(a.α, b.α; opts...) && ≈(a.β, b.β; opts...)
+                        approxorder(a.α, b.α; opts...) && approxorder(a.β, b.β; opts...)
 
 function isapprox(a::PowerNumber, b::Real; opts...)
     a.α > 0 && return false
