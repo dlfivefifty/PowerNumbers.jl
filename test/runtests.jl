@@ -61,7 +61,7 @@ end
 
 @testset "Rational" begin
     @test PowerNumber(1.,0,0.,1.) + PowerNumber(-1.,0,2.,2.) == PowerNumber(1.,0.,0.,1)
-    @test_broken (1 + 1/ϵ + 1/ϵ^2) / (1 + 1/ϵ + 1/ϵ^2) == 1
+    @test (1 + 1/ϵ + 1/ϵ^2) / (1 + 1/ϵ + 1/ϵ^2) == 1
 end
 
 @testset "HypergeometricFunctions" begin
@@ -122,6 +122,21 @@ end
     @test PowerNumber(2.0,3.0,-1.0,1.0) + 5 == PowerNumber(2.0,5.0,-1.0,0.0)
 end
 
+@testset "PowerNumber multiplication tracks the error order" begin
+    # the error order of a product is min(β+γ, α+δ), not the order of the leading product
+    @test (1+ϵ)*(1+ϵ) == PowerNumber(1.0,2.0,0.0,1.0)
+    @test (1+ϵ)^2 == PowerNumber(1.0,2.0,0.0,1.0)
+    @test (1+ϵ)*(2-ϵ) == PowerNumber(2.0,1.0,0.0,1.0)
+    @test ϵ*ϵ == PowerNumber(1.0,2.0)
+    @test ϵ*inv(ϵ) === PowerNumber(1.0,0.0,0.0,0.0)
+    @test sign(1+ϵ)*sqrt((1+ϵ)^2-1) ≈ sqrt(ϵ)*sqrt(2+ϵ)
+
+    h = 1E-8
+    for (x,y) in ((1+ϵ, 1+ϵ), (2+3ϵ, PowerNumber(0.5,-1.0,-1.0,0.0)), (sqrt(ϵ), 1-ϵ))
+        @test (x*y)(h) ≈ x(h)*y(h) rtol=1E-6
+    end
+end
+
 @testset "PowerNumber * LogNumber" begin
     @test PowerNumber(2.0,3.0,0.0,1.0) * LogNumber(1.0,2.0) == LogNumber(1.0,2.0) * 2.0
     @test LogNumber(1.0,2.0) * PowerNumber(2.0,3.0,0.0,1.0) == LogNumber(1.0,2.0) * 2.0
@@ -144,6 +159,82 @@ end
     @test sprint(show, PowerNumber(2.0,3.0,1.0,2.0)) == "(2.0)ϵ^1.0 + (3.0)ϵ^2.0 + o(ϵ^2.0)"
 end
 
+
+@testset "PowerNumber is Real" begin
+    @test PowerNumber <: Real
+    @test PowerNumber(1.0,2.0,0.0,1.0) isa Real
+    @test ϵ isa Real
+    @test real(ϵ) === ϵ
+    @test imag(ϵ) == 0
+    @test conj(ϵ) === ϵ
+    @test isreal(ϵ)
+
+    @test promote_type(Float64, PowerNumber{Float64,Float64}) === PowerNumber{Float64,Float64}
+    @test promote_type(Int, PowerNumber{Float64,Float64}) === PowerNumber{Float64,Float64}
+    @test promote_type(ComplexF64, PowerNumber{Float64,Float64}) === Complex{PowerNumber{Float64,Float64}}
+
+    @test ϵ < 1
+    @test 1 > ϵ
+    # ϵ and -ϵ agree to leading order, so neither is less than the other
+    @test !(-ϵ < ϵ)
+    @test !(ϵ < -ϵ)
+    @test !(ϵ < ϵ)
+    @test sort([1+ϵ, -1+ϵ, ϵ]) == [-1+ϵ, ϵ, 1+ϵ]
+
+    @test signbit(-1+ϵ)
+    @test !signbit(1+ϵ)
+    @test isfinite(1+ϵ)
+    @test isinf(1/ϵ)
+    @test !isnan(ϵ)
+end
+
+@testset "Complex{PowerNumber}" begin
+    h = 1E-8
+
+    # complex coefficients produce a pair of real expansions
+    z = (1+im)*ϵ
+    @test z isa Complex{PowerNumber{Float64,Float64}}
+    @test real(z) === ϵ
+    @test imag(z) === ϵ
+    @test PowerNumber(2im,im+1,0,0.5) isa Complex{<:PowerNumber}
+
+    # the two leading terms of the pair are merged back together
+    w = -1 + (1+im)*ϵ
+    @test apart(w) == -1
+    @test bpart(w) == 1+im
+    @test alpha(w) == 0
+    @test beta(w) == 1
+    @test (apart(z), bpart(z), alpha(z), beta(z)) == (1+im, 0, 1, 1)
+
+    # a constant keeps its `o(ϵ^Inf)` error term
+    c = complex(PowerNumber(1.0), PowerNumber(2.0))
+    @test (apart(c), bpart(c), alpha(c), beta(c)) == (1+2im, 0, 0, Inf)
+
+    # real and imaginary parts may carry different orders
+    m = complex(PowerNumber(1.0,2.0,0.0,1.0), PowerNumber(3.0,4.0,2.0,3.0))
+    @test (apart(m), bpart(m), alpha(m), beta(m)) == (1, 2, 0, 1)
+
+    @test w(h) ≈ -1 + (1+im)*h
+    for f in (inv, sqrt, exp, sin, cos, tanh)
+        @test f(w)(h) ≈ f(w(h)) rtol=1E-6
+    end
+    @test (w^3)(h) ≈ w(h)^3 rtol=1E-6
+    @test (w^0.3)(h) ≈ w(h)^0.3 rtol=1E-6
+
+    v = 2+3im+ϵ
+    @test (w*v)(h) ≈ w(h)*v(h) rtol=1E-6
+    @test (w/v)(h) ≈ w(h)/v(h) rtol=1E-6
+    @test (v/w)(h) ≈ v(h)/w(h) rtol=1E-6
+    @test (2/w)(h) ≈ 2/w(h) rtol=1E-6
+    @test (w/2)(h) ≈ w(h)/2 rtol=1E-6
+    @test (w+v)(h) ≈ w(h)+v(h) rtol=1E-6
+
+    @test log(z) == LogNumber(1, log(1+im))
+    @test log1p(-1+z) == LogNumber(1, log(1+im))
+
+    @test sprint(show, z) == "(1.0 + 1.0im)ϵ^1.0 + o(ϵ^1.0)"
+    @test sprint(show, w) == "(-1.0 + 0.0im)ϵ^0.0 + (1.0 + 1.0im)ϵ^1.0 + o(ϵ^1.0)"
+end
 
 
 #0.19999999999999996, 0.10000000000000009, 1.3, 1.0 + (-1.0)ϵ^1.0 + o(ϵ^1.0)
