@@ -8,7 +8,8 @@ import Base: exp, atanh, log1p, abs, log, inv, real, imag, conj, sqrt,
                 sin, cos, tan, sec, csc, cot, sind, cosd, tand, secd, cscd, cotd, asin, acos,
                 atan, asec, acsc, acot, asind, acosd, atand, asecd, acscd, acotd, sinh, cosh,
                 tanh, sech, csch, coth, asinh, acosh, asech, acsch, acoth, deg2rad, rad2deg,
-                zero, one, isless, iszero, sign, signbit, isinf, isreal, Real, muladd, eps, float
+                zero, one, isless, iszero, sign, signbit, isinf, isnan, isfinite, isreal, Real,
+                muladd, eps, float, angle
 
 import DualNumbers: Dual, realpart, epsilon, dual
 
@@ -22,15 +23,20 @@ include("LogNumber.jl")
 
 represents a power series of the form `A*ϵ^α + B*ϵ^β + o(ϵ^β)` where `α ≤ β`.
 When α == β we impose B = 0.
+
+`PowerNumber` is a `Real` number type, so its coefficients `A` and `B` are real.
+Complex expansions are represented as `Complex{<:PowerNumber}`, that is, as a pair of
+real expansions, and the four-argument constructor returns one when given complex
+coefficients.
 """
-struct PowerNumber{T<:Number,V<:Number} <: Number
+struct PowerNumber{T<:Real,V<:Real} <: Real
     A::T
     B::T
     α::V
     β::V
-    function PowerNumber{T,V}(A,B,α,β) where {T<:Number,V<:Number}
+    function PowerNumber{T,V}(A,B,α,β) where {T<:Real,V<:Real}
         α > β && error("Must have α ≤ β")
-        α == -Inf && error("Must have α≤ β")
+        α == -Inf && error("Must have α≤ β")
         if α == β
             new{T,V}(A+B,0,β,β)
         elseif A == 0
@@ -41,28 +47,85 @@ struct PowerNumber{T<:Number,V<:Number} <: Number
     end
 end
 
-PowerNumber(a::T, b::T, c::V, d::V) where {T,V} = PowerNumber{T,V}(a,b,c,d)
-PowerNumber(a,b,c,d) = PowerNumber(promote(a,b)..., promote(c,d)...)
-PowerNumber(a,b) = PowerNumber(a,0,b,b)
-PowerNumber(a) = PowerNumber(a,0,zero(a),Inf)
+# `_pn` builds either a `PowerNumber` or, for complex coefficients, the equivalent
+# `Complex{<:PowerNumber}`.  All constructors and operations funnel through it so that
+# complex data never has to be stored inside a `PowerNumber`.
+function _pn(A::Real, B::Real, α::Real, β::Real)
+    a, b = promote(A, B)
+    c, d = promote(α, β)
+    PowerNumber{typeof(a),typeof(c)}(a, b, c, d)
+end
+_pn(A::Complex, B::Complex, α::Real, β::Real) =
+    complex(_pn(real(A), real(B), α, β), _pn(imag(A), imag(B), α, β))
+_pn(A::Number, B::Number, α::Real, β::Real) = _pn(promote(A,B)..., α, β)
 
-PowerNumber{T,V}(z::PowerNumber) where {T,V} = PowerNumber{T,V}(convert(T, z.A), convert(T, z.B), convert(V, z.α), convert(V, z.β))
-PowerNumber{T,V}(a) where {T,V} = PowerNumber(convert(T,a),zero(T),zero(V),convert(V,Inf))
+PowerNumber(A::Number, B::Number, α::Real, β::Real) = _pn(A, B, α, β)
+PowerNumber(A::Number, α::Real) = PowerNumber(A, zero(A), α, α)
+PowerNumber(A::Number) = PowerNumber(A, zero(A), 0, Inf)
+PowerNumber(A::Complex) = PowerNumber(A, zero(A), 0, Inf) # disambiguate from Base's Real(::Complex)
 
-promote_rule(::Type{T}, ::Type{PowerNumber{V,W}}) where {T,V,W} =
+PowerNumber{T,V}(z::PowerNumber) where {T<:Real,V<:Real} =
+    PowerNumber{T,V}(convert(T, z.A), convert(T, z.B), convert(V, z.α), convert(V, z.β))
+PowerNumber{T,V}(a::Real) where {T<:Real,V<:Real} =
+    PowerNumber{T,V}(convert(T,a), zero(T), zero(V), convert(V,Inf))
+
+promote_rule(::Type{PowerNumber{V,W}}, ::Type{T}) where {V,W,T<:Real} =
     PowerNumber{promote_type(T,V),W}
 promote_rule(::Type{PowerNumber{T,S}}, ::Type{PowerNumber{V,W}}) where {T,S,V,W} =
     PowerNumber{promote_type(T,V),promote_type(W,S)}
 
 const ϵ = PowerNumber(1.0,1.0)
 
-apart(z::PowerNumber) = z.A
-bpart(z::PowerNumber) = z.B
-alpha(z::PowerNumber) = z.α
-beta(z::PowerNumber) = z.β
+"""
+    AnyPowerNumber
+
+either a real [`PowerNumber`](@ref) or a `Complex` one.
+"""
+const AnyPowerNumber = Union{PowerNumber,Complex{<:PowerNumber}}
+
+"""
+    terms(z)
+
+return `(A, B, α, β)` with `z == A*ϵ^α + B*ϵ^β + o(ϵ^β)` and `α ≤ β`.  For a
+`Complex{<:PowerNumber}` the coefficients are complex and the two leading exponents of
+the real and imaginary parts are merged.
+"""
+terms(z::PowerNumber) = (z.A, z.B, z.α, z.β)
+
+"""
+    _twoleading(ts, δ)
+
+merge the `(coefficient, exponent)` pairs `ts` into the canonical `(A, B, α, β)` of the
+two leading terms, given that everything beyond `ϵ^δ` is unknown.
+"""
+function _twoleading(ts, δ)
+    kept = sort!([t for t in ts if !iszero(t[1]) && t[2] ≤ δ]; by=last)
+    merged = similar(kept, 0)
+    for t in kept
+        if !isempty(merged) && merged[end][2] == t[2]
+            merged[end] = (merged[end][1] + t[1], t[2])
+        else
+            push!(merged, t)
+        end
+    end
+    if isempty(merged)
+        z = zero(ts[1][1])
+        (z, z, δ, δ)
+    elseif length(merged) == 1
+        A, α = merged[1]
+        (A, zero(A), α, δ)
+    else
+        (merged[1][1], merged[2][1], merged[1][2], merged[2][2])
+    end
+end
+
+apart(z::AnyPowerNumber) = terms(z)[1]
+bpart(z::AnyPowerNumber) = terms(z)[2]
+alpha(z::AnyPowerNumber) = terms(z)[3]
+beta(z::AnyPowerNumber) = terms(z)[4]
 
 PowerNumber(x::Dual) = PowerNumber(realpart(x), epsilon(x), 0, 1)
-Dual(x::PowerNumber) = (alpha(x) == 0 && beta(x) == 1) ? (return Dual(apart(x), bpart(x))) : (throw("α, β must equal 0, 1 to convert to dual."))
+Dual(x::PowerNumber) = (x.α == 0 && x.β == 1) ? (return Dual(x.A, x.B)) : (throw("α, β must equal 0, 1 to convert to dual."))
 dual(x::PowerNumber) = Dual(x)
 
 zero(x::PowerNumber) = PowerNumber(zero(x.A), zero(x.B), x.α, x.β)
@@ -71,6 +134,7 @@ one(::Type{PowerNumber{T,V}}) where {T,V} = PowerNumber(one(T))
 
 eps(::Type{<:PowerNumber{T}}) where T = eps(T)
 float(P::PowerNumber) = PowerNumber(float(P.A), float(P.B), P.α, P.β)
+float(::Type{PowerNumber{T,V}}) where {T,V} = PowerNumber{float(T),float(V)}
 
 function (x::PowerNumber)(ε)
     (; A,B,α,β) = x
@@ -78,8 +142,8 @@ function (x::PowerNumber)(ε)
 end
 
 function +(x::PowerNumber, y::PowerNumber)
-    a,b,α,β = apart(x),bpart(x),alpha(x),beta(x)
-    c,d,γ,δ = apart(y),bpart(y),alpha(y),beta(y)
+    a,b,α,β = x.A,x.B,x.α,x.β
+    c,d,γ,δ = y.A,y.B,y.α,y.β
     if δ ≈ β && d != 0
         return +(PowerNumber(a,b+d,α,β), PowerNumber(c,0,γ,δ))
     elseif δ < β #we assume β < δ
@@ -98,8 +162,8 @@ function +(x::PowerNumber, y::PowerNumber)
 end
 
 
-function +(x::PowerNumber, y::Number)
-    a,b,α,β = apart(x),bpart(x),alpha(x),beta(x)
+function +(x::PowerNumber, y::Real)
+    a,b,α,β = x.A,x.B,x.α,x.β
     if iszero(α)
         PowerNumber(a+y, b, α, β)
     elseif iszero(β)
@@ -113,18 +177,20 @@ function +(x::PowerNumber, y::Number)
     end
 end
 
-+(y::Number, x::PowerNumber) = +(x, y)
++(y::Real, x::PowerNumber) = +(x, y)
 
 function *(x::PowerNumber, y::PowerNumber)
-    a,b,α,β = apart(x),bpart(x),alpha(x),beta(x)
-    c,d,γ,δ = apart(y),bpart(y),alpha(y),beta(y)
-    return PowerNumber(a*c,α+γ) + PowerNumber(b*c,β+γ) + PowerNumber(a*d,α+δ) + PowerNumber(b*d,β+δ)
+    a,b,α,β = x.A,x.B,x.α,x.β
+    c,d,γ,δ = y.A,y.B,y.α,y.β
+    # the four products are exact monomials; multiplying the o(ϵ^β) of one by the leading
+    # term of the other is what sets the error order of the product
+    _pn(_twoleading(((a*c,α+γ), (b*c,β+γ), (a*d,α+δ), (b*d,β+δ)), min(β+γ, α+δ))...)
 end
 
-*(x::PowerNumber, y::Number) = PowerNumber(y*apart(x),y*bpart(x),alpha(x),beta(x))
-*(y::Number, x::PowerNumber) = *(x::PowerNumber, y::Number)
+*(x::PowerNumber, y::Real) = PowerNumber(y*x.A,y*x.B,x.α,x.β)
+*(y::Real, x::PowerNumber) = x*y
 
-muladd(x::Number, y::PowerNumber, z::Number) = x*y + z
+muladd(x::Real, y::PowerNumber, z::Real) = x*y + z
 
 function *(a::PowerNumber, l::LogNumber)
     @assert a.α == 0 && a.β == 1
@@ -149,101 +215,102 @@ function LogNumber{T}(a::PowerNumber) where T
 end
 
 
--(x::PowerNumber) = PowerNumber(-apart(x),-bpart(x),alpha(x),beta(x))
--(x::PowerNumber, y::PowerNumber) = +(x, -y)
--(x::PowerNumber, y::Number) = +(x::PowerNumber, -y::Number)
--(y::Number, x::PowerNumber) = +(-x::PowerNumber, y::Number)
+-(x::PowerNumber) = PowerNumber(-x.A,-x.B,x.α,x.β)
+-(x::PowerNumber, y::PowerNumber) = x + (-y)
+-(x::PowerNumber, y::Real) = x + (-y)
+-(y::Real, x::PowerNumber) = (-x) + y
 
-function inv(x::PowerNumber)
-    a,b,α,β = apart(x),bpart(x),alpha(x),beta(x)
-    if α == Inf
-        error("Not defined for α = Inf")
-    end
-    α != β ? (return PowerNumber(1/a,-b*a^(-2),-α,β-2*α)) : (return PowerNumber(1/a,-β))
+# the shared kernels below take the canonical data `(A,B,α,β)` of a real or complex
+# power number and return the canonical data of the result.
+
+function _inv(A, B, α, β)
+    α == Inf && error("Not defined for α = Inf")
+    α != β ? (1/A, -B*A^(-2), -α, β-2*α) : (1/A, zero(A), -α, -α)
 end
+
+inv(x::PowerNumber) = _pn(_inv(terms(x)...)...)
 
 /(z::PowerNumber, x::PowerNumber) = z*inv(x)
-/(z::PowerNumber, x::Number) = z*inv(x)
-/(x::Number, z::PowerNumber) = x*inv(z)
+/(z::PowerNumber, x::Real) = z*inv(x)
+/(x::Real, z::PowerNumber) = x*inv(z)
+
+_pow(A, B, α, β, p) =
+    α == β ? (A^p, zero(A), α*p, α*p) : (A^p, (A^(p-1))*B*p, p*α, β+(p-1)*α)
 
 ^(z::PowerNumber, p::Integer) = invoke(^, Tuple{Number,Integer}, z, p)
-function ^(z::PowerNumber, p::Number)
-    (; A,B,α,β) = z
-    α == β ? (return PowerNumber(A^p,α*p)) : (return PowerNumber(A^p,(A^(p-1))*B*p,p*α,β+(p-1)*α))
-end
+^(z::PowerNumber, p::Number) = _pn(_pow(terms(z)..., p)...)
+^(z::PowerNumber, p::Rational) = z^float(p) # disambiguate from Base
 
 sqrt(z::PowerNumber) = z^0.5
 cbrt(z::PowerNumber) = z^(1/3)
 
 iszero(z::PowerNumber) = z.α > 0 || (iszero(z.A) && (z.β > 0 || iszero(z.B)))
+isnan(z::PowerNumber) = isnan(z.A)
+isinf(z::PowerNumber) = z.α < 0 || isinf(z.A)
+isfinite(z::PowerNumber) = !isinf(z) && !isnan(z)
 
 ==(a::PowerNumber, b::PowerNumber) = iszero(a - b)
+==(a::Real, b::PowerNumber) = PowerNumber(a) == b
+==(a::PowerNumber, b::Real) = a == PowerNumber(b)
+==(a::AbstractIrrational, b::PowerNumber) = PowerNumber(a) == b # disambiguate from Base
+==(a::PowerNumber, b::AbstractIrrational) = a == PowerNumber(b)
 
-==(a::Number, b::PowerNumber) = PowerNumber(a) == b
-==(a::PowerNumber, b::Number) = a == PowerNumber(b)
+isapprox(a::PowerNumber, b::PowerNumber; opts...) = ≈(a.A, b.A; opts...) && ≈(a.B, b.B; opts...) &&
+                                                ≈(a.α, b.α; opts...) && ≈(a.β, b.β; opts...)
 
-isapprox(a::PowerNumber, b::PowerNumber; opts...) = ≈(apart(a), apart(b); opts...) && ≈(bpart(a), bpart(b); opts...) &&
-                                                ≈(alpha(a), alpha(b); opts...) && ≈(beta(a), beta(b); opts...)
-
-function isapprox(a::PowerNumber, b::Number; opts...)
+function isapprox(a::PowerNumber, b::Real; opts...)
     a.α > 0 && return false
     iszero(a.α) && return isapprox(a.A, b; opts...)
     isapprox(zero(a.A), b; opts...)
 end
-isapprox(b::Number, a::PowerNumber; opts...) = isapprox(a, b; opts...)
+isapprox(b::Real, a::PowerNumber; opts...) = isapprox(a, b; opts...)
 
-function log(z::PowerNumber{T,V}) where {T,V}
-    a,b,α,β = apart(z),bpart(z),alpha(z),beta(z)
-    iszero(a) && error("Cannot evaluate log at 0")
-    LogNumber(promote(α, log(a))...)
+function _log(A, B, α, β)
+    iszero(A) && error("Cannot evaluate log at 0")
+    LogNumber(promote(α, log(A))...)
 end
 
+log(z::PowerNumber) = _log(terms(z)...)
 log1p(z::PowerNumber) = log(z+1)
 
-function atanh(z::PowerNumber)
-    (log(1+z)-log(1-z))/2
-end
+atanh(z::PowerNumber) = (log(1+z)-log(1-z))/2
 
-for op in (:real, :imag, :conj)
-    @eval $op(l::PowerNumber) = PowerNumber($op(apart(l)), $op(bpart(l)), alpha(l), beta(l))
-end
-
-functionlist = (:abs, :abs2, :log10, :log2, :exp, :exp2, :expm1,
+functionlist = (:log10, :log2, :exp, :exp2, :expm1,
                 :sin, :cos, :tan, :sec, :csc, :cot, :sind, :cosd, :tand, :secd, :cscd, :cotd, :asin, :acos,
                 :atan, :asec, :acsc, :acot, :asind, :acosd, :atand, :asecd, :acscd, :acotd, :sinh, :cosh,
                 :tanh, :sech, :csch, :coth, :asinh, :acosh, :asech, :acsch, :acoth, :deg2rad, :rad2deg)
 
+# applies `f` to the two leading terms via dual-number arithmetic
+function _applyfun(f, A, B, α, β)
+    if iszero(α)
+        fz = f(dual(A,B))
+        p = β
+    elseif α > 0
+        fz = f(dual(zero(A),A))
+        p = α
+    else
+        error("Alpha must be non-negative")
+    end
+    (realpart(fz), epsilon(fz), zero(p), p)
+end
+
 for op in functionlist
-    @eval function $op(z::PowerNumber)
-        a,b,α,β = apart(z),bpart(z),alpha(z),beta(z)
-        if iszero(α)
-            fz = $op(dual(a,b))
-            p = β
-        elseif α > 0
-            fz = $op(dual(0,a))
-            p = α
-        else
-            error("Alpha must be non-negative")
-        end
-	    PowerNumber(realpart(fz), epsilon(fz), 0, p)
-	end
+    @eval $op(z::PowerNumber) = _pn(_applyfun($op, terms(z)...)...)
 end
 
 sign(z::PowerNumber) = sign(z.A)
-abs(z::PowerNumber{<:Real,<:Real}) = sign(z) * z
+signbit(z::PowerNumber) = signbit(z.A)
+abs(z::PowerNumber) = sign(z) * z
 
-function isless(z::PowerNumber{T}, w::Real) where T
-    a,b,α,β = apart(z),bpart(z),alpha(z),beta(z)
-    (α > 0 || iszero(a)) && return isless(zero(T), w)
-    α < 0 && return signbit(a) # TODO: What if w == -Inf
-    isless(a,w)
-end
+# Comparison with any other `Real` promotes to a `PowerNumber` first, so ordering only
+# needs to be defined between two of them.  `Real` requires `<`, whose Base fallback for
+# two values of the same type just errors out.
+<(x::PowerNumber, y::PowerNumber) = isless(x, y)
+<=(x::PowerNumber, y::PowerNumber) = !isless(y, x)
 
-function isless(w::Real, z::PowerNumber{T}) where T
-    a,b,α,β = apart(z),bpart(z),alpha(z),beta(z)
-    (α > 0 || iszero(a)) && return isless(w, zero(T))
-    α < 0 && return !signbit(a) # TODO: What if w == -Inf
-    isless(w,a)
+function isless(z::PowerNumber, w::PowerNumber)
+    d = z - w
+    iszero(d) ? false : signbit(d.A)
 end
 
 function Base.show(io::IO, x::PowerNumber)
@@ -262,5 +329,7 @@ function Base.show(io::IO, x::PowerNumber)
         end
     end
 end
+
+include("complex.jl")
 
 end # module
