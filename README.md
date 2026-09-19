@@ -30,6 +30,32 @@ julia> log(ϵ) + 5 # we also support logarithms
 (1.0)log ε + 5.0
 ```
 
+## Exact values
+
+The two orders `α` and `β` are separate type parameters, so a value that is known exactly
+can mark its error order with `ℵ₀` (`Infinities.InfiniteCardinal{0}`) instead of `Inf`.
+An integer then converts to an expansion made entirely of integers, and stays that way
+through arithmetic:
+
+```julia
+julia> PowerNumber(5)
+5 + o(ϵ^ℵ₀)
+
+julia> typeof(PowerNumber(5))
+PowerNumber{Int64, Int64, Infinities.InfiniteCardinal{0}}
+
+julia> PowerNumber(1,2,0,1) * PowerNumber(3) # (1 + 2ϵ) * 3, all integers
+3 + (6)ϵ^1 + o(ϵ^1)
+
+julia> 2 + ϵ # a float ϵ still uses float orders, with Inf for an exact value
+2.0 + (1.0)ϵ^1.0 + o(ϵ^1.0)
+```
+
+`ℵ₀` compares and adds like any other integer (`ℵ₀ + 1 == ℵ₀`, `1 < ℵ₀`, `ℵ₀ == Inf`), so
+it slots into the order arithmetic without special cases. It is what lets an integer be
+promoted into an expansion with integer orders at all: an `Int` field could not have held
+`Inf`.
+
 ## Complex expansions
 
 `PowerNumber <: Real`, so a complex expansion is an ordinary `Complex` whose real and

@@ -1,5 +1,6 @@
 using PowerNumbers, Test, IntervalArithmetic, HypergeometricFunctions
 import PowerNumbers: PowerNumber, LogNumber, realpart, apart, bpart, alpha, beta
+using Infinities
 
 @testset "RiemannDual -> PowerNumber" begin
     for h in (0.1,0.01), a in (2exp(0.1im),1.1)
@@ -99,16 +100,49 @@ end
     @test 2.0*LogNumber(1.0, 2.0) == LogNumber(2.0, 4.0)
 end
 
-@testset "PowerNumber exponents are floats" begin
-    # β == Inf marks an exact value, so an integer exponent type could not represent it
-    @test PowerNumber(1,1) isa PowerNumber{Int,Float64}
-    @test PowerNumber(1,2,0,1) isa PowerNumber{Int,Float64}
-    @test beta(PowerNumber(1)) == Inf
+@testset "exact values carry β == ℵ₀" begin
+    # an integer converts to an expansion whose coefficients and orders are all integers:
+    # `ℵ₀` marks "known exactly" where a float exponent would use `Inf`
+    @test PowerNumber(5) isa PowerNumber{Int,Int,InfiniteCardinal{0}}
+    @test alpha(PowerNumber(5)) === 0
+    @test beta(PowerNumber(5)) === ℵ₀
+    @test beta(PowerNumber(5)) == Inf
+    @test PowerNumber(5)(0.5) == 5
+    @test PowerNumber(5) == 5
 
-    # promoting an integer into a power number with integer coefficients used to throw
+    # exactness is preserved by arithmetic on exact values
+    @test PowerNumber(5) * PowerNumber(3) == 15
+    @test beta(PowerNumber(5) * PowerNumber(3)) === ℵ₀
+    @test beta(PowerNumber(5) + PowerNumber(3)) === ℵ₀
+    @test beta(inv(PowerNumber(4))) === ℵ₀
+    @test inv(PowerNumber(4)) == 0.25
+    @test beta(sqrt(PowerNumber(4))) === ℵ₀
+    @test sqrt(PowerNumber(4)) == 2
+    @test beta(exp(PowerNumber(1))) === ℵ₀
+    @test PowerNumber(2)^3 === PowerNumber(8)
+
+    # integer data stays integer all the way through
+    @test PowerNumber(1,2,0,1) * PowerNumber(3) === PowerNumber(3,6,0,1)
+    @test PowerNumber(1,2,0,1) * PowerNumber(3) isa PowerNumber{Int,Int,Int}
+
+    # each exponent keeps its own type; they are never promoted against each other
+    @test PowerNumber(1,1) isa PowerNumber{Int,Int,Int}
+    @test PowerNumber(1,2,0,1) isa PowerNumber{Int,Int,Int}
+    @test PowerNumber(1,2,0,1.5) isa PowerNumber{Int,Int,Float64}
+    @test ϵ isa PowerNumber{Float64,Float64,Float64}
+
+    # promoting a plain number into an expansion with integer exponents needs an order
+    # that means "exact"; `Inf` could not be stored in an `Int` field, `ℵ₀` can
     e = PowerNumber(1,1)
+    @test convert(PowerNumber{Int,Int,InfiniteCardinal{0}}, 3) == PowerNumber(3)
     @test 2 + im + e isa Complex{<:PowerNumber}
     @test (2 + im + e)(0.5) == 2.5 + im
+    @test (1 + e)(0.5) == 1.5
+
+    # `Infinities` also claims `(::Type{<:Real})(::Infinity)`; an infinite argument is
+    # a coefficient, not an order
+    @test apart(PowerNumber{Float64,Float64,Float64}(∞)) === Inf
+    @test PowerNumber{Float64,Float64,Float64}(∞) isa PowerNumber{Float64,Float64,Float64}
 end
 
 @testset "PowerNumber constructors and conversions" begin
@@ -190,9 +224,10 @@ end
     @test conj(ϵ) === ϵ
     @test isreal(ϵ)
 
-    @test promote_type(Float64, PowerNumber{Float64,Float64}) === PowerNumber{Float64,Float64}
-    @test promote_type(Int, PowerNumber{Float64,Float64}) === PowerNumber{Float64,Float64}
-    @test promote_type(ComplexF64, PowerNumber{Float64,Float64}) === Complex{PowerNumber{Float64,Float64}}
+    P = PowerNumber{Float64,Float64,Float64}
+    @test promote_type(Float64, P) === P
+    @test promote_type(Int, P) === P
+    @test promote_type(ComplexF64, P) === Complex{P}
 
     @test ϵ < 1
     @test 1 > ϵ
@@ -214,7 +249,7 @@ end
 
     # complex coefficients produce a pair of real expansions
     z = (1+im)*ϵ
-    @test z isa Complex{PowerNumber{Float64,Float64}}
+    @test z isa Complex{PowerNumber{Float64,Float64,Float64}}
     @test real(z) === ϵ
     @test imag(z) === ϵ
     @test PowerNumber(2im,im+1,0,0.5) isa Complex{<:PowerNumber}
