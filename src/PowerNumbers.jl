@@ -50,9 +50,11 @@ end
 # `_pn` builds either a `PowerNumber` or, for complex coefficients, the equivalent
 # `Complex{<:PowerNumber}`.  All constructors and operations funnel through it so that
 # complex data never has to be stored inside a `PowerNumber`.
+# Exponents are floated: an exact value carries `β == Inf`, which an integer exponent
+# type could not represent, and fractional powers are the normal case anyway.
 function _pn(A::Real, B::Real, α::Real, β::Real)
     a, b = promote(A, B)
-    c, d = promote(α, β)
+    c, d = promote(float(α), float(β))
     PowerNumber{typeof(a),typeof(c)}(a, b, c, d)
 end
 _pn(A::Complex, B::Complex, α::Real, β::Real) =
@@ -192,15 +194,19 @@ end
 
 muladd(x::Real, y::PowerNumber, z::Real) = x*y + z
 
-function *(a::PowerNumber, l::LogNumber)
-    @assert a.α == 0 && a.β == 1
-    a.A * l
+# A `LogNumber` is only scaled by the leading coefficient: the `ϵ^β` term times `log ϵ`
+# is `o(1)`, so it does not survive.  Without this the generic `LogNumber`-times-`Real`
+# and `LogNumber`-times-`Complex` methods would nest a power number inside the `LogNumber`.
+function _logscale(a::AnyPowerNumber)
+    A, B, α, β = terms(a)
+    @assert α == 0 && β == 1
+    A
 end
 
-function *(l::LogNumber, a::PowerNumber)
-    @assert a.α == 0 && a.β == 1
-    l * a.A
-end
+*(a::PowerNumber, l::LogNumber) = _logscale(a) * l
+*(l::LogNumber, a::PowerNumber) = l * _logscale(a)
+*(a::Complex{<:PowerNumber}, l::LogNumber) = _logscale(a) * l
+*(l::LogNumber, a::Complex{<:PowerNumber}) = l * _logscale(a)
 
 LogNumber(a::PowerNumber{T}) where T = LogNumber{T}(a)
 
