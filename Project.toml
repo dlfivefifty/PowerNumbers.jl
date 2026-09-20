@@ -9,7 +9,7 @@ Infinities = "e1ba4f0e-776d-440f-acd9-e1d2e9742647"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 
 [weakdeps]
-RecurrenceRelationshipArrays = "d8a4904e-b15c-11e9-3269-09a3773c0cb0"
+RecurrenceRelationshipArrays = "b889d2dc-af3c-4820-88a8-238fa91d3518"
 
 [extensions]
 PowerNumbersRecurrenceRelationshipArraysExt = "RecurrenceRelationshipArrays"
