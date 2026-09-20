@@ -1,6 +1,6 @@
 using PowerNumbers, Test, IntervalArithmetic, HypergeometricFunctions
-import PowerNumbers: PowerNumber, LogNumber, logpart, realpart, apart, bpart, alpha, beta
-using Infinities, LinearAlgebra
+import PowerNumbers: PowerNumber, LogNumber, logpart, realpart, apart, bpart, alpha, beta, terms
+using Infinities, LinearAlgebra, RecurrenceRelationshipArrays
 
 @testset "RiemannDual -> PowerNumber" begin
     for h in (0.1,0.01), a in (2exp(0.1im),1.1)
@@ -98,6 +98,18 @@ end
     @test -LogNumber(1.0, 2.0) == LogNumber(-1.0, -2.0)
     @test LogNumber(1.0, 2.0)*2.0 == LogNumber(2.0, 4.0)
     @test 2.0*LogNumber(1.0, 2.0) == LogNumber(2.0, 4.0)
+
+    @test zero(LogNumber(1.0, 2.0)) === LogNumber(0.0, 0.0)
+    @test one(LogNumber(1.0, 2.0)) === LogNumber(0.0, 1.0)
+
+    # dividing by a finite log number is dividing by the value it stands for
+    @test LogNumber(1.0, 2.0)/LogNumber(0.0, 4.0) === LogNumber(1.0, 2.0)/4.0
+    # two log numbers that both blow up leave the ratio of their log parts
+    @test LogNumber(2.0, 1.0)/LogNumber(4.0, 3.0) === 0.5
+    @test LogNumber(1.0, 0.0)/LogNumber(1.0, 0.0) === 1.0
+    # TODO: `2/(log ε + 4)` tends to 0, so this throwing is arguably wrong; pinned as-is
+    @test_throws DomainError LogNumber(0.0, 2.0)/LogNumber(1.0, 4.0)
+    @test_throws DomainError 2.0/LogNumber(1.0, 4.0)
 end
 
 @testset "exact values carry β == ℵ₀" begin
@@ -151,6 +163,15 @@ end
     @test zero(PowerNumber{Float64,Float64}) == PowerNumber(0.0)
     @test one(PowerNumber{Float64,Float64}) == PowerNumber(1.0)
     @test eps(PowerNumber{Float64,Float64}) == eps(Float64)
+
+    # `zero`/`one` on the concrete type must keep all three parameters, or a computation
+    # over a float-ordered element type silently drops to `ℵ₀` orders
+    @test zero(typeof(ϵ)) === PowerNumber{Float64,Float64,Float64}(0.0, 0.0, 0.0, Inf)
+    @test one(typeof(ϵ)) === PowerNumber{Float64,Float64,Float64}(1.0, 0.0, 0.0, Inf)
+    @test zero(typeof(ϵ)) isa typeof(ϵ)
+    @test one(typeof(ϵ)) isa typeof(ϵ)
+    @test iszero(zero(typeof(ϵ)))
+    @test one(typeof(ϵ)) == 1
 end
 
 @testset "PowerNumber addition merging" begin
@@ -175,6 +196,12 @@ end
     @test (1+ϵ)*(2-ϵ) == PowerNumber(2.0,1.0,0.0,1.0)
     @test ϵ*ϵ == PowerNumber(1.0,2.0)
     @test ϵ*inv(ϵ) === PowerNumber(1.0,0.0,0.0,0.0)
+
+    # every term vanishing leaves only the error order
+    @test iszero(zero(ϵ)*zero(ϵ))
+    @test terms(zero(ϵ)*zero(ϵ)) === (0.0, 0.0, 2.0, 2.0)
+    @test terms(PowerNumber(0)*PowerNumber(0)) === (0, 0, ℵ₀, ℵ₀)
+    @test terms(complex(zero(ϵ), zero(ϵ))) === (0.0+0.0im, 0.0+0.0im, 1.0, 1.0)
     @test sign(1+ϵ)*sqrt((1+ϵ)^2-1) ≈ sqrt(ϵ)*sqrt(2+ϵ)
 
     h = 1E-8
@@ -209,6 +236,7 @@ end
     @test !isless(PowerNumber(2.0,1.0,-1.0,0.0), 5.0)
     @test isless(PowerNumber(3.0,1.0,0.0,1.0), 5.0)
 
+    @test sprint(show, PowerNumber(2.0)) == "2.0 + o(ϵ^ℵ₀)"
     @test sprint(show, PowerNumber(2.0,0.0,1.0,1.0)) == "(2.0)ϵ^1.0 + o(ϵ^1.0)"
     @test sprint(show, PowerNumber(2.0,3.0,0.0,1.0)) == "2.0 + (3.0)ϵ^1.0 + o(ϵ^1.0)"
     @test sprint(show, PowerNumber(2.0,3.0,1.0,2.0)) == "(2.0)ϵ^1.0 + (3.0)ϵ^2.0 + o(ϵ^2.0)"
@@ -352,11 +380,31 @@ end
     @test ϵ * LogNumber(1.0,2.0) === zero(LogNumber{Float64})   # ϵ*log ϵ → 0
     @test ϵ + LogNumber(1.0,2.0) === LogNumber(1.0,2.0)
     @test_throws DomainError inv(ϵ) * LogNumber(1.0,2.0)
+    @test LogNumber(1.0,2.0) / (2+ϵ) === LogNumber(1.0,2.0) / 2.0
+    @test LogNumber(1.0,2.0) / (2+im+ϵ) === LogNumber(1.0,2.0) / (2+im)
+    @test LogNumber(2im,1.0) / (2+ϵ) === LogNumber(2im,1.0) / 2.0
+    @test (2+ϵ) / LogNumber(0.0,2.0) === 2.0 / LogNumber(0.0,2.0)
 
     # and that is what they promote to, so Base code that promotes first agrees
     @test promote_type(PowerNumber{Float64,Float64,Float64}, LogNumber{Float64}) === LogNumber{Float64}
     @test convert(LogNumber{Float64}, 2+ϵ) === LogNumber(0.0,2.0)
     @test muladd(2+ϵ, LogNumber(1.0,2.0), LogNumber(0.0,1.0)) === LogNumber(2.0,5.0)
+end
+
+
+@testset "RecurrenceRelationshipArrays extension" begin
+    # the recurrence is ordinary scalar arithmetic, so a power number argument contributes
+    # only the point it sits at; the log expansion is carried by the seed data
+    A = fill(2.0, 10); B = fill(0.0, 10); C = fill(1.0, 10)
+    data = [LogNumber(1.0,2.0), LogNumber(0.5,1.0)]
+    r = RecurrenceArray(2+ϵ, (A,B,C), data)
+    @test r isa RecurrenceArray
+    @test r[1:4] == RecurrenceArray(2.0, (A,B,C), data)[1:4]
+    @test r[1] === data[1]
+
+    # the point has to be a plain value perturbed to first order for that to hold
+    @test_throws AssertionError RecurrenceArray(2+ϵ^2, (A,B,C), data)
+    @test_throws AssertionError RecurrenceArray(2+inv(ϵ), (A,B,C), data)
 end
 
 
