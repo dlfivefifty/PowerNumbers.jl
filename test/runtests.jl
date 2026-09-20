@@ -1,6 +1,6 @@
 using PowerNumbers, Test, IntervalArithmetic, HypergeometricFunctions
-import PowerNumbers: PowerNumber, LogNumber, realpart, apart, bpart, alpha, beta
-using Infinities
+import PowerNumbers: PowerNumber, LogNumber, logpart, realpart, apart, bpart, alpha, beta
+using Infinities, LinearAlgebra
 
 @testset "RiemannDual -> PowerNumber" begin
     for h in (0.1,0.01), a in (2exp(0.1im),1.1)
@@ -194,7 +194,7 @@ end
     @test z isa Complex{<:PowerNumber}
     @test z * LogNumber(1.0,2.0) === LogNumber(1.0,2.0) * (2.0+3.0im)
     @test LogNumber(1.0,2.0) * z === LogNumber(1.0,2.0) * (2.0+3.0im)
-    @test z * LogNumber(1.0,2.0) isa LogNumber{ComplexF64}
+    @test z * LogNumber(1.0,2.0) isa Complex{<:LogNumber}
 end
 
 @testset "PowerNumber misc functions" begin
@@ -290,6 +290,73 @@ end
 
     @test sprint(show, z) == "(1.0 + 1.0im)ϵ^1.0 + o(ϵ^1.0)"
     @test sprint(show, w) == "(-1.0 + 0.0im)ϵ^0.0 + (1.0 + 1.0im)ϵ^1.0 + o(ϵ^1.0)"
+end
+
+
+
+
+@testset "LogNumber is Real" begin
+    @test LogNumber <: Real
+    @test LogNumber(1.0,2.0) isa Real
+    @test real(LogNumber(1.0,2.0)) === LogNumber(1.0,2.0)
+    @test imag(LogNumber(1.0,2.0)) == 0
+    @test conj(LogNumber(1.0,2.0)) === LogNumber(1.0,2.0)
+
+    @test zero(LogNumber{Float64}) === LogNumber(0.0,0.0)
+    @test one(LogNumber{Float64}) === LogNumber(0.0,1.0)
+    @test float(LogNumber(1,2)) === LogNumber(1.0,2.0)
+    @test promote_type(Float64, LogNumber{Float64}) === LogNumber{Float64}
+    @test promote_type(ComplexF64, LogNumber{Float64}) === Complex{LogNumber{Float64}}
+
+    # `s*log ε → -∞`, so a larger log part is a smaller number
+    @test LogNumber(1.0,0.0) < 5.0
+    @test LogNumber(1.0,0.0) < LogNumber(0.0,-1E6)
+    @test signbit(LogNumber(1.0,0.0))
+    @test !signbit(LogNumber(-1.0,0.0))
+    @test isinf(LogNumber(1.0,0.0))
+    @test isfinite(LogNumber(0.0,1.0))
+
+    # a product of two genuine log numbers is not representable
+    @test LogNumber(0.0,3.0) * LogNumber(1.0,2.0) === LogNumber(3.0,6.0)
+    @test LogNumber(1.0,2.0) * LogNumber(0.0,3.0) === LogNumber(3.0,6.0)
+    @test_throws ArgumentError LogNumber(1.0,2.0) * LogNumber(1.0,2.0)
+end
+
+@testset "Complex{LogNumber}" begin
+    l = LogNumber(2im, im+1)
+    @test l isa Complex{<:LogNumber}
+    @test real(l) === LogNumber(0,1)
+    @test imag(l) === LogNumber(2,1)
+    @test conj(l) === LogNumber(-2im, 1-im)
+    @test logpart(l) == 2im
+    @test realpart(l) == im+1
+    @test l(ℯ) ≈ 2im + im + 1
+
+    # log of a complex power number is a complex log number
+    @test log((1+im)*ϵ) isa Complex{<:LogNumber}
+    @test log((1+im)*ϵ) == LogNumber(1, log(1+im))
+    @test exp(log((1+im)*ϵ)) ≈ (1+im)*ϵ
+
+    # dividing by a complex scalar must not run Base's complex division over the parts
+    @test LogNumber(1.0,2.0)/(2im) === LogNumber(1.0/(2im), 2.0/(2im))
+    @test (l/(2im))(0.5) ≈ l(0.5)/(2im)
+
+    # a rounding-level real part is weighed against the whole part, not on its own
+    @test LogNumber(1, π*im + eps()^2) ≈ LogNumber(1, π*im)
+end
+
+@testset "PowerNumber and LogNumber mix" begin
+    # only the ϵ^0 coefficient of a power number reaches a log number
+    @test (2+ϵ) * LogNumber(1.0,2.0) === 2.0 * LogNumber(1.0,2.0)
+    @test (2+ϵ) + LogNumber(1.0,2.0) === LogNumber(1.0,4.0)
+    @test ϵ * LogNumber(1.0,2.0) === zero(LogNumber{Float64})   # ϵ*log ϵ → 0
+    @test ϵ + LogNumber(1.0,2.0) === LogNumber(1.0,2.0)
+    @test_throws DomainError inv(ϵ) * LogNumber(1.0,2.0)
+
+    # and that is what they promote to, so Base code that promotes first agrees
+    @test promote_type(PowerNumber{Float64,Float64,Float64}, LogNumber{Float64}) === LogNumber{Float64}
+    @test convert(LogNumber{Float64}, 2+ϵ) === LogNumber(0.0,2.0)
+    @test muladd(2+ϵ, LogNumber(1.0,2.0), LogNumber(0.0,1.0)) === LogNumber(2.0,5.0)
 end
 
 
