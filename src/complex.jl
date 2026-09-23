@@ -65,3 +65,32 @@ function Base.show(io::IO, z::Complex{<:PowerNumber})
         print(io, "($A)ϵ^$α + ($B)ϵ^$β + o(ϵ^$β)")
     end
 end
+
+
+## Complex log numbers
+
+(l::Complex{<:LogNumber})(ε) = complex(real(l)(ε), imag(l)(ε))
+
+# `exp(s*log ε + c) = exp(c)*ϵ^s`, which is only a power number when the log part is real
+function exp(l::Complex{<:LogNumber})
+    s, c = logpart(l), realpart(l)
+    iszero(imag(s)) || throw(DomainError(l, "exponent of ϵ must be real"))
+    _pn(exp(c), zero(c), real(s), real(s))
+end
+expm1(l::Complex{<:LogNumber}) = exp(l) - 1
+
+# as above: divide the log and finite parts rather than letting Base run a complex
+# division over `LogNumber` components
+# a `Real` divisor is fine componentwise, so only the complex case needs taking over
+/(l::Complex{<:LogNumber}, b::Complex) = LogNumber(logpart(l)/b, realpart(l)/b)
+
+# compare the log and finite parts as complex numbers rather than componentwise, so that
+# a rounding-level real part is weighed against the magnitude of the whole part
+isapprox(a::Complex{<:LogNumber}, b::Complex{<:LogNumber}; opts...) =
+    ≈(logpart(a), logpart(b); opts...) && ≈(realpart(a), realpart(b); opts...)
+isapprox(a::Complex{<:LogNumber}, b::Number; opts...) = ≈(a(1), b; opts...)
+isapprox(a::Number, b::Complex{<:LogNumber}; opts...) = ≈(a, b(1); opts...)
+isapprox(a::Complex{<:LogNumber}, b::Complex{<:PowerNumber}; opts...) = ≈(a(1), b(1); opts...)
+isapprox(a::Complex{<:PowerNumber}, b::Complex{<:LogNumber}; opts...) = ≈(a(1), b(1); opts...)
+
+Base.show(io::IO, l::Complex{<:LogNumber}) = print(io, "($(logpart(l)))log ε + $(realpart(l))")

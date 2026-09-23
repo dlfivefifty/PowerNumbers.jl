@@ -1,6 +1,6 @@
 using PowerNumbers, Test, IntervalArithmetic, HypergeometricFunctions
-import PowerNumbers: PowerNumber, LogNumber, realpart, apart, bpart, alpha, beta
-using Infinities
+import PowerNumbers: PowerNumber, LogNumber, logpart, realpart, apart, bpart, alpha, beta, terms
+using Infinities, LinearAlgebra, RecurrenceRelationshipArrays
 
 @testset "RiemannDual -> PowerNumber" begin
     for h in (0.1,0.01), a in (2exp(0.1im),1.1)
@@ -98,6 +98,18 @@ end
     @test -LogNumber(1.0, 2.0) == LogNumber(-1.0, -2.0)
     @test LogNumber(1.0, 2.0)*2.0 == LogNumber(2.0, 4.0)
     @test 2.0*LogNumber(1.0, 2.0) == LogNumber(2.0, 4.0)
+
+    @test zero(LogNumber(1.0, 2.0)) === LogNumber(0.0, 0.0)
+    @test one(LogNumber(1.0, 2.0)) === LogNumber(0.0, 1.0)
+
+    # dividing by a finite log number is dividing by the value it stands for
+    @test LogNumber(1.0, 2.0)/LogNumber(0.0, 4.0) === LogNumber(1.0, 2.0)/4.0
+    # two log numbers that both blow up leave the ratio of their log parts
+    @test LogNumber(2.0, 1.0)/LogNumber(4.0, 3.0) === 0.5
+    @test LogNumber(1.0, 0.0)/LogNumber(1.0, 0.0) === 1.0
+    # TODO: `2/(log ε + 4)` tends to 0, so this throwing is arguably wrong; pinned as-is
+    @test_throws DomainError LogNumber(0.0, 2.0)/LogNumber(1.0, 4.0)
+    @test_throws DomainError 2.0/LogNumber(1.0, 4.0)
 end
 
 @testset "exact values carry β == ℵ₀" begin
@@ -151,6 +163,15 @@ end
     @test zero(PowerNumber{Float64,Float64}) == PowerNumber(0.0)
     @test one(PowerNumber{Float64,Float64}) == PowerNumber(1.0)
     @test eps(PowerNumber{Float64,Float64}) == eps(Float64)
+
+    # `zero`/`one` on the concrete type must keep all three parameters, or a computation
+    # over a float-ordered element type silently drops to `ℵ₀` orders
+    @test zero(typeof(ϵ)) === PowerNumber{Float64,Float64,Float64}(0.0, 0.0, 0.0, Inf)
+    @test one(typeof(ϵ)) === PowerNumber{Float64,Float64,Float64}(1.0, 0.0, 0.0, Inf)
+    @test zero(typeof(ϵ)) isa typeof(ϵ)
+    @test one(typeof(ϵ)) isa typeof(ϵ)
+    @test iszero(zero(typeof(ϵ)))
+    @test one(typeof(ϵ)) == 1
 end
 
 @testset "PowerNumber addition merging" begin
@@ -175,6 +196,12 @@ end
     @test (1+ϵ)*(2-ϵ) == PowerNumber(2.0,1.0,0.0,1.0)
     @test ϵ*ϵ == PowerNumber(1.0,2.0)
     @test ϵ*inv(ϵ) === PowerNumber(1.0,0.0,0.0,0.0)
+
+    # every term vanishing leaves only the error order
+    @test iszero(zero(ϵ)*zero(ϵ))
+    @test terms(zero(ϵ)*zero(ϵ)) === (0.0, 0.0, 2.0, 2.0)
+    @test terms(PowerNumber(0)*PowerNumber(0)) === (0, 0, ℵ₀, ℵ₀)
+    @test terms(complex(zero(ϵ), zero(ϵ))) === (0.0+0.0im, 0.0+0.0im, 1.0, 1.0)
     @test sign(1+ϵ)*sqrt((1+ϵ)^2-1) ≈ sqrt(ϵ)*sqrt(2+ϵ)
 
     h = 1E-8
@@ -194,7 +221,7 @@ end
     @test z isa Complex{<:PowerNumber}
     @test z * LogNumber(1.0,2.0) === LogNumber(1.0,2.0) * (2.0+3.0im)
     @test LogNumber(1.0,2.0) * z === LogNumber(1.0,2.0) * (2.0+3.0im)
-    @test z * LogNumber(1.0,2.0) isa LogNumber{ComplexF64}
+    @test z * LogNumber(1.0,2.0) isa Complex{<:LogNumber}
 end
 
 @testset "PowerNumber misc functions" begin
@@ -209,6 +236,7 @@ end
     @test !isless(PowerNumber(2.0,1.0,-1.0,0.0), 5.0)
     @test isless(PowerNumber(3.0,1.0,0.0,1.0), 5.0)
 
+    @test sprint(show, PowerNumber(2.0)) == "2.0 + o(ϵ^ℵ₀)"
     @test sprint(show, PowerNumber(2.0,0.0,1.0,1.0)) == "(2.0)ϵ^1.0 + o(ϵ^1.0)"
     @test sprint(show, PowerNumber(2.0,3.0,0.0,1.0)) == "2.0 + (3.0)ϵ^1.0 + o(ϵ^1.0)"
     @test sprint(show, PowerNumber(2.0,3.0,1.0,2.0)) == "(2.0)ϵ^1.0 + (3.0)ϵ^2.0 + o(ϵ^2.0)"
@@ -290,6 +318,93 @@ end
 
     @test sprint(show, z) == "(1.0 + 1.0im)ϵ^1.0 + o(ϵ^1.0)"
     @test sprint(show, w) == "(-1.0 + 0.0im)ϵ^0.0 + (1.0 + 1.0im)ϵ^1.0 + o(ϵ^1.0)"
+end
+
+
+
+
+@testset "LogNumber is Real" begin
+    @test LogNumber <: Real
+    @test LogNumber(1.0,2.0) isa Real
+    @test real(LogNumber(1.0,2.0)) === LogNumber(1.0,2.0)
+    @test imag(LogNumber(1.0,2.0)) == 0
+    @test conj(LogNumber(1.0,2.0)) === LogNumber(1.0,2.0)
+
+    @test zero(LogNumber{Float64}) === LogNumber(0.0,0.0)
+    @test one(LogNumber{Float64}) === LogNumber(0.0,1.0)
+    @test float(LogNumber(1,2)) === LogNumber(1.0,2.0)
+    @test promote_type(Float64, LogNumber{Float64}) === LogNumber{Float64}
+    @test promote_type(ComplexF64, LogNumber{Float64}) === Complex{LogNumber{Float64}}
+
+    # `s*log ε → -∞`, so a larger log part is a smaller number
+    @test LogNumber(1.0,0.0) < 5.0
+    @test LogNumber(1.0,0.0) < LogNumber(0.0,-1E6)
+    @test signbit(LogNumber(1.0,0.0))
+    @test !signbit(LogNumber(-1.0,0.0))
+    @test isinf(LogNumber(1.0,0.0))
+    @test isfinite(LogNumber(0.0,1.0))
+
+    # a product of two genuine log numbers is not representable
+    @test LogNumber(0.0,3.0) * LogNumber(1.0,2.0) === LogNumber(3.0,6.0)
+    @test LogNumber(1.0,2.0) * LogNumber(0.0,3.0) === LogNumber(3.0,6.0)
+    @test_throws ArgumentError LogNumber(1.0,2.0) * LogNumber(1.0,2.0)
+end
+
+@testset "Complex{LogNumber}" begin
+    l = LogNumber(2im, im+1)
+    @test l isa Complex{<:LogNumber}
+    @test real(l) === LogNumber(0,1)
+    @test imag(l) === LogNumber(2,1)
+    @test conj(l) === LogNumber(-2im, 1-im)
+    @test logpart(l) == 2im
+    @test realpart(l) == im+1
+    @test l(ℯ) ≈ 2im + im + 1
+
+    # log of a complex power number is a complex log number
+    @test log((1+im)*ϵ) isa Complex{<:LogNumber}
+    @test log((1+im)*ϵ) == LogNumber(1, log(1+im))
+    @test exp(log((1+im)*ϵ)) ≈ (1+im)*ϵ
+
+    # dividing by a complex scalar must not run Base's complex division over the parts
+    @test LogNumber(1.0,2.0)/(2im) === LogNumber(1.0/(2im), 2.0/(2im))
+    @test (l/(2im))(0.5) ≈ l(0.5)/(2im)
+
+    # a rounding-level real part is weighed against the whole part, not on its own
+    @test LogNumber(1, π*im + eps()^2) ≈ LogNumber(1, π*im)
+end
+
+@testset "PowerNumber and LogNumber mix" begin
+    # only the ϵ^0 coefficient of a power number reaches a log number
+    @test (2+ϵ) * LogNumber(1.0,2.0) === 2.0 * LogNumber(1.0,2.0)
+    @test (2+ϵ) + LogNumber(1.0,2.0) === LogNumber(1.0,4.0)
+    @test ϵ * LogNumber(1.0,2.0) === zero(LogNumber{Float64})   # ϵ*log ϵ → 0
+    @test ϵ + LogNumber(1.0,2.0) === LogNumber(1.0,2.0)
+    @test_throws DomainError inv(ϵ) * LogNumber(1.0,2.0)
+    @test LogNumber(1.0,2.0) / (2+ϵ) === LogNumber(1.0,2.0) / 2.0
+    @test LogNumber(1.0,2.0) / (2+im+ϵ) === LogNumber(1.0,2.0) / (2+im)
+    @test LogNumber(2im,1.0) / (2+ϵ) === LogNumber(2im,1.0) / 2.0
+    @test (2+ϵ) / LogNumber(0.0,2.0) === 2.0 / LogNumber(0.0,2.0)
+
+    # and that is what they promote to, so Base code that promotes first agrees
+    @test promote_type(PowerNumber{Float64,Float64,Float64}, LogNumber{Float64}) === LogNumber{Float64}
+    @test convert(LogNumber{Float64}, 2+ϵ) === LogNumber(0.0,2.0)
+    @test muladd(2+ϵ, LogNumber(1.0,2.0), LogNumber(0.0,1.0)) === LogNumber(2.0,5.0)
+end
+
+
+@testset "RecurrenceRelationshipArrays extension" begin
+    # the recurrence is ordinary scalar arithmetic, so a power number argument contributes
+    # only the point it sits at; the log expansion is carried by the seed data
+    A = fill(2.0, 10); B = fill(0.0, 10); C = fill(1.0, 10)
+    data = [LogNumber(1.0,2.0), LogNumber(0.5,1.0)]
+    r = RecurrenceArray(2+ϵ, (A,B,C), data)
+    @test r isa RecurrenceArray
+    @test r[1:4] == RecurrenceArray(2.0, (A,B,C), data)[1:4]
+    @test r[1] === data[1]
+
+    # the point has to be a plain value perturbed to first order for that to hold
+    @test_throws AssertionError RecurrenceArray(2+ϵ^2, (A,B,C), data)
+    @test_throws AssertionError RecurrenceArray(2+inv(ϵ), (A,B,C), data)
 end
 
 

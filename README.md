@@ -81,6 +81,32 @@ canonical `A*ϵ^α + B*ϵ^β + o(ϵ^β)` form merge them back together and trunc
 leading terms. Passing complex coefficients to the `PowerNumber` constructor builds the
 corresponding `Complex{<:PowerNumber}`.
 
+`LogNumber` works the same way — it is `Real`, and a complex log expansion is a
+`Complex{<:LogNumber}`:
+
+```julia
+julia> LogNumber(2im, im+1)
+(0 + 2im)log ε + 1 + 1im
+
+julia> typeof(LogNumber(2im, im+1))
+Complex{LogNumber{Int64}}
+
+julia> log((1+im)*ϵ)
+(1.0 + 0.0im)log ε + 0.34657359027997264 + 0.7853981633974483im
+```
+
+Where the two types meet, only the `ϵ^0` coefficient of the power number survives, since
+a `LogNumber` has no room for a power of `ϵ` (and `ϵ*log ϵ → 0`). That is also what they
+promote to, so code that promotes before operating agrees:
+
+```julia
+julia> (2+ϵ)*LogNumber(1.0,2.0)
+(2.0)log ε + 4.0
+
+julia> promote_type(typeof(ϵ), LogNumber{Float64})
+LogNumber{Float64}
+```
+
 ## Comparison with DualNumbers.jl, ForwardDiff.jl and TaylorSeries.jl
 
 All four types push a truncated expansion in a small parameter through ordinary Julia

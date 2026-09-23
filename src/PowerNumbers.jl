@@ -253,31 +253,46 @@ end
 
 muladd(x::Real, y::PowerNumber, z::Real) = x*y + z
 
-# A `LogNumber` is only scaled by the leading coefficient: the `ϵ^β` term times `log ϵ`
-# is `o(1)`, so it does not survive.  Without this the generic `LogNumber`-times-`Real`
-# and `LogNumber`-times-`Complex` methods would nest a power number inside the `LogNumber`.
-function _logscale(a::AnyPowerNumber)
+# A `LogNumber` has no room for a power of `ϵ`, so only the `ϵ^0` coefficient of a power
+# number survives a combination with one: the `ϵ^β` term times `log ϵ` is `o(1)`, and
+# `ϵ^β` added to `s*log ϵ + c` is likewise beyond what the result can hold.
+function _logconst(a::AnyPowerNumber)
     A, B, α, β = terms(a)
-    @assert α == 0 && β == 1
+    α > 0 && return zero(A) # smaller than anything a LogNumber can resolve (ϵ*log ϵ → 0)
+    α < 0 && throw(DomainError(a, "diverges faster than log ϵ, so cannot combine with a LogNumber"))
     A
 end
 
-*(a::PowerNumber, l::LogNumber) = _logscale(a) * l
-*(l::LogNumber, a::PowerNumber) = l * _logscale(a)
-*(a::Complex{<:PowerNumber}, l::LogNumber) = _logscale(a) * l
-*(l::LogNumber, a::Complex{<:PowerNumber}) = l * _logscale(a)
-
-LogNumber(a::PowerNumber{T}) where T = LogNumber{T}(a)
-
-function LogNumber{T}(a::PowerNumber) where T
-    if a.α == 0 && a.β > 0
-        LogNumber{T}(zero(T), a.A)
-    elseif a.α == 0 && a.β == 0
-        LogNumber{T}(zero(T), a.A + a.B)
-    else
-        error("not implemented")
+# These have to take the whole complex number rather than being left to Base's
+# componentwise `Complex` arithmetic: the real and imaginary parts of a
+# `Complex{<:PowerNumber}` may carry different orders, and only their merged leading term
+# is at `ϵ^0`. They also settle which of the generic `PowerNumber`-and-`Real` and
+# `LogNumber`-and-`Real` methods applies, now that both types are `Real`.
+for P in (:PowerNumber, :(Complex{<:PowerNumber})), L in (:LogNumber, :(Complex{<:LogNumber}))
+    @eval begin
+        *(a::$P, l::$L) = _logconst(a) * l
+        *(l::$L, a::$P) = l * _logconst(a)
+        +(a::$P, l::$L) = _logconst(a) + l
+        +(l::$L, a::$P) = l + _logconst(a)
+        -(a::$P, l::$L) = _logconst(a) - l
+        -(l::$L, a::$P) = l - _logconst(a)
+        /(a::$P, l::$L) = _logconst(a) / l
+        /(l::$L, a::$P) = l / _logconst(a)
     end
 end
+
+# Combining the two always collapses to a `LogNumber`, so that is what they promote to.
+# Without this the greedy `PowerNumber`-with-any-`Real` rule would nest a log number
+# inside a power number wherever Base promotes before operating — `Base._mulsub`, which
+# complex `muladd` goes through, is one such place.
+promote_rule(::Type{PowerNumber{T,V,W}}, ::Type{LogNumber{S}}) where {T,V,W,S} = LogNumber{promote_type(T,S)}
+promote_rule(::Type{LogNumber{S}}, ::Type{PowerNumber{T,V,W}}) where {T,V,W,S} = LogNumber{promote_type(T,S)}
+
+isapprox(a::LogNumber, b::PowerNumber; opts...) = ≈(a, PowerNumber(b)(1); opts...)
+isapprox(a::PowerNumber, b::LogNumber; opts...) = ≈(a(1), b; opts...)
+
+LogNumber(a::PowerNumber{T}) where T = LogNumber{T}(a)
+LogNumber{T}(a::PowerNumber) where T<:Real = LogNumber{T}(zero(T), convert(T, _logconst(a)))
 
 
 -(x::PowerNumber) = PowerNumber(-x.A,-x.B,x.α,x.β)
