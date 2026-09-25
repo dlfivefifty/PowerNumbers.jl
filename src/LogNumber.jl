@@ -94,13 +94,15 @@ end
 
 muladd(x::Real, y::LogNumber, z::LogNumber) = x*y + z
 
+# every branch returns the type of `a / _value(b)` so that division is type-stable
 function /(a::LogNumber, b::LogNumber)
+    r = a / _value(b)
     if !isinf(b)
-        a / _value(b)
+        r
     elseif !isinf(a)
-        _value(a) / b
+        zero(r) # c/(s*log ε + d) → 0
     else
-        a.s / b.s
+        oftype(r, a.s / b.s) # the log parts dominate
     end
 end
 /(l::LogNumber, b::Real) = LogNumber(l.s/b, l.c/b)
@@ -109,8 +111,8 @@ end
 /(l::LogNumber, b::Complex) = LogNumber(l.s/b, l.c/b)
 
 function /(a::Real, l::LogNumber)
-    isinf(l) && throw(DomainError(l))
-    a / _value(l)
+    r = a / _value(l)
+    isinf(l) ? zero(r) : r # a/(s*log ε + c) → 0
 end
 
 exp(l::LogNumber) = PowerNumber(exp(l.c), 0, l.s, l.s)

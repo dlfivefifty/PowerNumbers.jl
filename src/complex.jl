@@ -84,6 +84,26 @@ expm1(l::Complex{<:LogNumber}) = exp(l) - 1
 # a `Real` divisor is fine componentwise, so only the complex case needs taking over
 /(l::Complex{<:LogNumber}, b::Complex) = LogNumber(logpart(l)/b, realpart(l)/b)
 
+# dividing by a log number follows the real case, including being type-stable; without
+# these, Base promotes the numerator and recurses back into the division by a plain `Complex` above
+function /(a::Complex{<:LogNumber}, b::Complex{<:LogNumber})
+    r = a / realpart(b)
+    if !isinf(b)
+        r
+    elseif !isinf(a)
+        zero(r)
+    else
+        convert(typeof(r), logpart(a) / logpart(b))
+    end
+end
+for Typ in (:Real, :Complex) # Real disambiguates from Base's /(::Real, ::Complex)
+    @eval function /(a::$Typ, b::Complex{<:LogNumber})
+        r = a / realpart(b)
+        isinf(b) ? zero(r) : r
+    end
+end
+/(a::LogNumber, b::Complex{<:LogNumber}) = complex(a) / b # disambiguate from /(::LogNumber, ::Complex)
+
 # compare the log and finite parts as complex numbers rather than componentwise, so that
 # a rounding-level real part is weighed against the magnitude of the whole part
 isapprox(a::Complex{<:LogNumber}, b::Complex{<:LogNumber}; opts...) =
