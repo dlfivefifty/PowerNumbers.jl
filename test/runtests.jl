@@ -103,13 +103,16 @@ end
     @test one(LogNumber(1.0, 2.0)) === LogNumber(0.0, 1.0)
 
     # dividing by a finite log number is dividing by the value it stands for
-    @test LogNumber(1.0, 2.0)/LogNumber(0.0, 4.0) === LogNumber(1.0, 2.0)/4.0
+    @test @inferred(LogNumber(1.0, 2.0)/LogNumber(0.0, 4.0)) === LogNumber(1.0, 2.0)/4.0
+    @test @inferred(2.0/LogNumber(0.0, 4.0)) === 0.5
     # two log numbers that both blow up leave the ratio of their log parts
-    @test LogNumber(2.0, 1.0)/LogNumber(4.0, 3.0) === 0.5
-    @test LogNumber(1.0, 0.0)/LogNumber(1.0, 0.0) === 1.0
-    # TODO: `2/(log ε + 4)` tends to 0, so this throwing is arguably wrong; pinned as-is
-    @test_throws DomainError LogNumber(0.0, 2.0)/LogNumber(1.0, 4.0)
-    @test_throws DomainError 2.0/LogNumber(1.0, 4.0)
+    @test @inferred(LogNumber(2.0, 1.0)/LogNumber(4.0, 3.0)) === LogNumber(0.0, 0.5)
+    @test @inferred(LogNumber(1.0, 0.0)/LogNumber(1.0, 0.0)) === LogNumber(0.0, 1.0)
+    @test LogNumber(2.0, 1.0)/LogNumber(4.0, 3.0) == 0.5
+    # a finite number over one that blows up tends to 0, e.g. 2/(log ε + 4)
+    @test @inferred(LogNumber(0.0, 2.0)/LogNumber(1.0, 4.0)) === LogNumber(0.0, 0.0)
+    @test @inferred(2.0/LogNumber(1.0, 4.0)) === 0.0
+    @test @inferred(2/LogNumber(1, 4)) === 0.0
 end
 
 @testset "exact values carry β == ℵ₀" begin
@@ -371,6 +374,21 @@ end
 
     # a rounding-level real part is weighed against the whole part, not on its own
     @test LogNumber(1, π*im + eps()^2) ≈ LogNumber(1, π*im)
+
+    # dividing by a complex log number follows the real case (these used to overflow the stack)
+    f = LogNumber(0.0, 2.0) + 0im # finite
+    @test @inferred(im/f) === im/(2.0+0im)
+    @test @inferred(2/f) === 2/(2.0+0im)
+    @test @inferred((1+im)/f) === (1+im)/(2.0+0im)
+    @test @inferred(l/f) === l/(2.0+0im)
+    @test @inferred(LogNumber(1.0,2.0)/(2im*f)) === LogNumber(1.0,2.0)/(4.0im)
+    # two that both blow up leave the ratio of their log parts
+    @test @inferred(LogNumber(2im, 1.0)/(LogNumber(4.0, 3.0)+0im)) === LogNumber(0.0+0im, 0.5im)
+    # as in the real case, a finite number over one that blows up tends to 0
+    @test @inferred(im/(LogNumber(1,2) + 0im)) === 0.0+0.0im
+    @test @inferred(2/(LogNumber(1,2) + 0im)) === 0.0+0.0im
+    @test @inferred(LogNumber(0.0,3.0)/(LogNumber(1.0,2.0) + 0im)) === LogNumber(0.0+0im, 0.0+0im)
+    @test @inferred((LogNumber(0.0,3.0) + 0im)/(LogNumber(1.0,2.0) + 0im)) === LogNumber(0.0+0im, 0.0+0im)
 end
 
 @testset "PowerNumber and LogNumber mix" begin
@@ -384,6 +402,9 @@ end
     @test LogNumber(1.0,2.0) / (2+im+ϵ) === LogNumber(1.0,2.0) / (2+im)
     @test LogNumber(2im,1.0) / (2+ϵ) === LogNumber(2im,1.0) / 2.0
     @test (2+ϵ) / LogNumber(0.0,2.0) === 2.0 / LogNumber(0.0,2.0)
+    @test @inferred(((2+ϵ)+0im) / (LogNumber(0.0,2.0)+0im)) === (2.0+0im) / (2.0+0im)
+    @test @inferred((ϵ+0im) / (LogNumber(0.0,2.0)+0im)) === (0.0+0im) / (2.0+0im)
+    @test @inferred((2+ϵ) / LogNumber(1.0,2.0)) === 0.0
 
     # and that is what they promote to, so Base code that promotes first agrees
     @test promote_type(PowerNumber{Float64,Float64,Float64}, LogNumber{Float64}) === LogNumber{Float64}
