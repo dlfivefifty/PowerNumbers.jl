@@ -321,6 +321,13 @@ end
 
     @test sprint(show, z) == "(1.0 + 1.0im)ϵ^1.0 + o(ϵ^1.0)"
     @test sprint(show, w) == "(-1.0 + 0.0im)ϵ^0.0 + (1.0 + 1.0im)ϵ^1.0 + o(ϵ^1.0)"
+
+    # a vanishing part is o(ϵ^β), so is not a leading term, e.g. in abs and log
+    o = PowerNumber(0.0, 0.0, -0.0, 1.0)
+    @test iszero(o) && alpha(o) == beta(o) == 1
+    u = complex(PowerNumber(-0.4, 1.0), o)
+    @test abs(u) ≈ PowerNumber(0.4, 1.0)
+    @test log(u) ≈ LogNumber(1, log(0.4) + π*im)
 end
 
 
