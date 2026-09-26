@@ -1,7 +1,7 @@
 name = "PowerNumbers"
 uuid = "7635a310-babe-11e9-2fde-a3dff3ddcf26"
 authors = ["idlemat <52246739+idlemat@users.noreply.github.com>"]
-version = "0.0.1"
+version = "0.0.2"
 
 [deps]
 DualNumbers = "fa6b7ba4-c1ee-5f82-b5fc-ecf0adba8f74"
