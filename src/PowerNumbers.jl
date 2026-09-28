@@ -92,6 +92,9 @@ function _pn(A::Real, B::Real, α::Real, β::Real)
     a, b = promote(A, B)
     if α == β
         PowerNumber{typeof(a),typeof(β),typeof(β)}(a+b, zero(a), β, β)
+    elseif iszero(a) && iszero(b) && isfinite(β)
+        # a vanishing expansion is o(ϵ^β), so record it at order β rather than as a zero leading term
+        PowerNumber{typeof(a),typeof(β),typeof(β)}(a, b, β, β)
     elseif iszero(a) && !iszero(b)
         PowerNumber{typeof(b),typeof(β),typeof(β)}(b, zero(b), β, β)
     else
